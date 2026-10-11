@@ -1,0 +1,210 @@
+<title>Stickman Hit Roster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Barlow:wght@400;600&display=swap">
+<style>
+  /* Layout: arcade cabinet at dusk. One fight strip up top, then a 2x2 grid of fighter cards. */
+  :root {
+    color-scheme: dark;
+    --bg: #1a1c2c;
+    --panel: #262b44;
+    --line: #3a4466;
+    --fg: #f4f4f4;
+    --muted: #94b0c2;
+    --accent: #ffcd75;
+    --hot: #ef7d57;
+    --pip-off: #333c57;
+    --frame-bg: #94b0c2;
+    --display: 'Silkscreen', 'Courier New', monospace;
+    --body: 'Barlow', 'Segoe UI', system-ui, sans-serif;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.5;
+    padding-inline: 16px;
+    padding-block: 32px 64px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 40px; }
+  h1, h2, h3, .label, .chip { font-family: var(--display); font-weight: 400; }
+  h1 { font-size: clamp(28px, 6vw, 48px); line-height: 1.1; margin: 0; color: var(--accent); text-shadow: 3px 3px 0 #b13e53; text-wrap: balance; }
+  h2 { font-size: 20px; margin: 0; color: var(--accent); letter-spacing: 0.04em; }
+  p { margin: 0; }
+  .lede { color: var(--muted); max-width: 62ch; }
+  header { display: grid; gap: 12px; }
+
+  .stage { border: 3px solid var(--line); background: var(--panel); overflow: hidden; }
+  .stage canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+
+  .roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 24px; }
+  .card {
+    background: var(--panel);
+    border: 3px solid var(--line);
+    border-top: 6px solid var(--team);
+    padding: 20px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .card > * { min-width: 0; }
+  @media (max-width: 520px) { .card { grid-template-columns: 1fr; } }
+
+  .frames { display: grid; gap: 10px; justify-items: center; }
+  .frame { display: grid; gap: 4px; justify-items: center; }
+  .frame canvas { width: 96px; height: 96px; image-rendering: pixelated; background: var(--frame-bg); border: 2px solid var(--line); }
+  .frame canvas.actual { width: 16px; height: 16px; border: 0; outline: 4px solid var(--frame-bg); margin: 4px; }
+  .label { font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
+  .frames-row { display: flex; gap: 10px; }
+
+  .info { display: grid; gap: 14px; }
+  .name { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .name h3 { font-size: 28px; margin: 0; line-height: 1; color: var(--team); }
+  .name span { color: var(--muted); font-size: 14px; }
+  .gear { font-weight: 600; }
+  .style { color: var(--muted); font-size: 15px; }
+
+  .stats { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 12px; align-items: center; }
+  .pips { display: flex; gap: 3px; }
+  .pip { width: 14px; height: 10px; background: var(--pip-off); }
+  .pip.on { background: var(--team); }
+  .num { font-family: var(--display); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .special { border-left: 4px solid var(--hot); padding-left: 12px; display: grid; gap: 2px; }
+  .special strong { font-family: var(--display); font-weight: 400; color: var(--hot); font-size: 14px; }
+  .special p { font-size: 15px; }
+  .bio { font-style: italic; color: var(--muted); font-size: 15px; }
+  .swatches { display: flex; gap: 6px; align-items: center; }
+  .swatch { width: 18px; height: 18px; border: 2px solid var(--line); }
+
+  .notes { display: grid; gap: 16px; }
+  .notes ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; max-width: 70ch; }
+  .notes li::marker { color: var(--accent); }
+  .totals { font-family: var(--display); font-size: 12px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="label">Stickman Hit / 1v1 fighter roster / draft 1</span>
+    <h1>Pick your stickman</h1>
+    <p class="lede">Four fighters with the same plain stick body. What tells them apart is their gear: a headband, a hard hat, a ninja mask and a cap. Every sprite is 16×16 pixels, shown here at 6× zoom and at real size.</p>
+  </header>
+
+  <div class="stage"><canvas id="stage" width="256" height="64" aria-label="All four fighters trading hits on a grass strip"></canvas></div>
+
+  <section class="roster" id="roster"></section>
+
+  <section class="notes">
+    <h2>How the roster is balanced</h2>
+    <ul>
+      <li>Every fighter gets exactly <strong>12 stat points</strong> spread across Power, Speed, Reach and Defense, so nobody is simply better than the others.</li>
+      <li>Each fighter has one clear strength and one clear weakness. BONK is very strong but very slow. ZIP is very fast but easy to knock out. TWIG has very long reach but is weak up close. JAB is the middle-of-the-road starter.</li>
+      <li>Rough matchups: JAB beats TWIG (gets in close), TWIG beats BONK (keeps him at a distance), BONK beats ZIP (one hit is enough), ZIP beats JAB (too fast to hit).</li>
+    </ul>
+    <p class="totals" id="totals"></p>
+  </section>
+</div>
+
+<script src="characters.js"></script>
+<script>
+  const STAT_NAMES = ['power', 'speed', 'reach', 'defense'];
+  const TEAM = { jab: '#b13e53', bonk: '#ffcd75', zip: '#3b5dc9', twig: '#38b764' };
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function spriteCanvas(sprite, cls) {
+    const c = el('canvas', cls);
+    c.width = 16; c.height = 16;
+    drawSprite(c.getContext('2d'), sprite, 0, 0, 1);
+    return c;
+  }
+
+  const roster = document.getElementById('roster');
+  CHARACTERS.forEach((ch) => {
+    const card = el('article', 'card');
+    card.style.setProperty('--team', TEAM[ch.id]);
+
+    const frames = el('div', 'frames');
+    const row = el('div', 'frames-row');
+    for (const [label, sprite] of [['Idle', ch.idle], ['Attack', ch.attack]]) {
+      const f = el('div', 'frame');
+      const c = spriteCanvas(sprite);
+      c.setAttribute('aria-label', `${ch.name} ${label.toLowerCase()} sprite`);
+      f.append(c, el('span', 'label', label));
+      row.append(f);
+    }
+    const actual = el('div', 'frame');
+    actual.append(spriteCanvas(ch.idle, 'actual'), el('span', 'label', '1× real size'));
+    frames.append(row, actual);
+
+    const info = el('div', 'info');
+    const name = el('div', 'name');
+    name.append(el('h3', null, ch.name), el('span', null, ch.tagline));
+
+    const stats = el('div', 'stats');
+    STAT_NAMES.forEach((s) => {
+      const pips = el('div', 'pips');
+      for (let i = 0; i < 5; i++) pips.append(el('span', 'pip' + (i < ch.stats[s] ? ' on' : '')));
+      stats.append(el('span', 'label', s), pips, el('span', 'num', `${ch.stats[s]}/5`));
+    });
+
+    const special = el('div', 'special');
+    special.append(el('span', 'label', 'Special move'), el('strong', null, ch.special.name), el('p', null, ch.special.text));
+
+    const swatches = el('div', 'swatches');
+    swatches.append(el('span', 'label', 'Colors'));
+    ch.colors.forEach((k) => {
+      const s = el('span', 'swatch');
+      s.style.background = PALETTE[k];
+      s.title = PALETTE[k];
+      swatches.append(s);
+    });
+
+    info.append(name, el('p', 'gear', ch.gear), el('p', 'style', ch.style), stats, special, el('p', 'bio', `“${ch.bio}”`), swatches);
+    card.append(frames, info);
+    roster.append(card);
+  });
+
+  document.getElementById('totals').textContent = CHARACTERS
+    .map((ch) => `${ch.name} ${STAT_NAMES.reduce((a, s) => a + ch.stats[s], 0)} PTS`)
+    .join('  ·  ');
+
+  // Fight strip: two pairs trading hits on a grass floor.
+  const stage = document.getElementById('stage');
+  const ctx = stage.getContext('2d');
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const [jab, bonk, zip, twig] = CHARACTERS;
+  let t = 0;
+
+  function drawStage() {
+    ctx.fillStyle = '#29366f'; ctx.fillRect(0, 0, 256, 16);
+    ctx.fillStyle = '#5d275d'; ctx.fillRect(0, 16, 256, 16);
+    ctx.fillStyle = '#b13e53'; ctx.fillRect(0, 32, 256, 16);
+    ctx.fillStyle = '#257179'; ctx.fillRect(0, 48, 256, 16);
+    ctx.fillStyle = '#38b764'; ctx.fillRect(0, 48, 256, 3);
+
+    const a = Math.floor(t / 45) % 2 === 0;
+    const b = !a;
+    drawSprite(ctx, a ? jab.attack : jab.idle, 40, 32);
+    drawSprite(ctx, twig.idle, 62, 32, 1, true);
+    drawSprite(ctx, b ? zip.attack : zip.idle, 168, 32);
+    drawSprite(ctx, b ? bonk.idle : bonk.attack, 192, 32, 1, true);
+    ctx.fillStyle = '#ffcd75';
+    ctx.font = '8px Silkscreen, monospace';
+    ctx.fillText('VS', 120, 20);
+  }
+
+  function tick() {
+    t++;
+    drawStage();
+    if (!reduced) requestAnimationFrame(tick);
+  }
+  tick();
+</script>
