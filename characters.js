@@ -20,6 +20,7 @@
     c: '#73eff7',
     a: '#a7f070', // robot glow
     g: '#38b764',
+    m: '#ff4fd8', // glitch magenta
   };
 
   // ---- Poses ------------------------------------------------------------
@@ -175,6 +176,7 @@
     if (gear.frontArm) gear.frontArm(g, p); else { line(g, p.neck, p.fE, 'k', 2); line(g, p.fE, p.fH, 'k', 2); }
     if (gear.hands) gear.hands(g, p); else { fist(g, p.bH, 'D'); fist(g, p.fH, 'k'); }
     gear.front?.(g, p);
+    gear.post?.(g, p);
     return g;
   }
 
@@ -326,7 +328,75 @@
     shoeBack: 'S',
   };
 
-  const GEAR = { boxer: BOXER, ninja: NINJA, samurai: SAMURAI, robot: ROBOT };
+  // Small seeded random so glitch noise is the same every time a pose renders.
+  function rng(seed) {
+    let x = seed;
+    return () => {
+      x = (x * 1103515245 + 12345) % 2147483648;
+      return x / 2147483648;
+    };
+  }
+
+  const GLITCH = {
+    head(g, p) {
+      const [cx, cy] = p.head;
+      head(g, p.head, 'w', 's');
+      // Mismatched eyes: one magenta, one cyan.
+      if (p.face === 'hit') {
+        rect(g, cx, cy - 1, 2, 1, 'm'); rect(g, cx + 2, cy, 2, 1, 'c');
+      } else {
+        rect(g, cx + 1, cy - 1, 1, 2, 'm');
+        rect(g, cx + 3, cy - 1, 1, 2, 'c');
+      }
+      if (p.face === 'happy') rect(g, cx + 1, cy + 2, 3, 1, 'k');
+      else px(g, cx + 2, cy + 2, 'k');
+      // A chunk of the head is missing and drawn shifted to the right.
+      for (let y = cy - 4; y <= cy - 2; y++) {
+        for (let x = cx + 1; x <= cx + 4; x++) {
+          if (!inHead(x, y, cx, cy)) continue;
+          px(g, x + 2, y, g[y]?.[x] === 'k' ? 'm' : 'w');
+          px(g, x, y, '.');
+        }
+      }
+    },
+    torso(g, { neck: [nx, ny] }) {
+      px(g, nx, ny + 2, 'a'); px(g, nx + 1, ny + 3, 'm');
+    },
+    post(g, p) {
+      const rand = rng(p.head[0] * 31 + p.head[1] * 17 + p.fH[0] * 7 + p.fF[0]);
+      const heavy = p.face === 'hit' || p.face === 'angry';
+      const src = g.map((row) => row.slice());
+      // Color-split edges: magenta bleeds left, cyan bleeds right.
+      for (let y = 0; y < SIZE; y++) {
+        if (!heavy && rand() < 0.45) continue;
+        for (let x = 0; x < SIZE; x++) {
+          if (src[y][x] === '.') continue;
+          if (src[y][x - 1] === '.' && x > 0) g[y][x - 1] = 'm';
+          if (src[y][x + 1] === '.' && x < SIZE - 1) g[y][x + 1] = 'c';
+        }
+      }
+      if (p.face === 'angry') {
+        // Teleporting: the body splits into bands that slide apart.
+        const frozen = g.map((row) => row.slice());
+        for (let y = 0; y < SIZE; y++) {
+          const band = Math.floor(y / 3) % 3;
+          const shift = band === 1 ? 4 : band === 2 ? -3 : 0;
+          if (!shift) continue;
+          for (let x = 0; x < SIZE; x++) g[y][x] = frozen[y][x - shift] ?? '.';
+        }
+      }
+      // Static around the body.
+      const count = heavy ? 14 : 6;
+      for (let i = 0; i < count; i++) {
+        const x = Math.floor(rand() * SIZE);
+        const y = Math.floor(rand() * SIZE);
+        if (g[y][x] === '.') g[y][x] = ['m', 'c', 'a', 'w'][Math.floor(rand() * 4)];
+      }
+    },
+    shoe: 'k',
+  };
+
+  const GEAR = { boxer: BOXER, ninja: NINJA, samurai: SAMURAI, robot: ROBOT, glitch: GLITCH };
 
   // ---- Roster --------------------------------------------------------------
   // Names are placeholders until the final names are picked.
@@ -378,6 +448,19 @@
       stats: { power: 4, speed: 2, reach: 2, defense: 4 },
       colors: ['s', 'S', 'a'],
       bio: 'Built to fold laundry. Discovered fighting. Has not folded laundry since.',
+    },
+    {
+      id: 'glitch',
+      name: 'GLITCH',
+      locked: true,
+      team: '#ff4fd8',
+      tagline: 'The secret fighter',
+      gear: 'No gear. A corrupted stickman with split colors, a missing piece of his head and static all around him',
+      style: 'Hard to pin down. Flickers around the stage and hits from angles nobody expects. Locked at the start.',
+      special: { name: 'Teleport', text: 'Vanishes in a burst of static and reappears behind the opponent, ready to hit. Has a short cooldown.' },
+      stats: { power: 3, speed: 4, reach: 3, defense: 2 },
+      colors: ['m', 'c', 'a'],
+      bio: 'Nobody made him. He showed up in the game files one day and refused to leave.',
     },
   ];
 

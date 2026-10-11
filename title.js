@@ -235,6 +235,29 @@
   // picks[0] is player 1's fighter index, picks[1] is player 2's.
   let picks = [];
 
+  // Locked fighters stay locked until unlocked (for now: a secret code typed on the select screen).
+  const UNLOCK_CODE = 'GLITCH';
+  let typed = '';
+  let unlocked = [];
+  try {
+    unlocked = JSON.parse(localStorage.getItem('stickman-hit-unlocked')) || [];
+  } catch (e) { /* storage unavailable */ }
+
+  function isLocked(f) {
+    return f.locked && !unlocked.includes(f.id);
+  }
+
+  function unlock(f) {
+    unlocked.push(f.id);
+    try {
+      localStorage.setItem('stickman-hit-unlocked', JSON.stringify(unlocked));
+    } catch (e) { /* ignore */ }
+    flash = { text: `${f.name} UNLOCKED!`, until: frame + 120 };
+    [523, 659, 784, 1047].forEach((n, i) => setTimeout(() => blip(n), i * 90));
+  }
+
+  let flash = null;
+
   FIGHTERS.forEach((f, i) => {
     screens.select.push({
       portrait: i,
@@ -243,6 +266,11 @@
       w: PORTRAIT,
       h: PORTRAIT,
       action: () => {
+        if (isLocked(f)) {
+          blip(160);
+          flash = { text: 'LOCKED', until: frame + 45 };
+          return;
+        }
         picks.push(i);
         if (picks.length === 2) go('versus');
       },
@@ -304,6 +332,21 @@
     ctx.fillStyle = C.cyan;
     ctx.fillRect(x, y, btn.w, 2);
     const f = FIGHTERS[btn.portrait];
+    if (isLocked(f)) {
+      // Dark silhouette with a padlock.
+      ctx.fillStyle = C.dark;
+      ctx.fillRect(x, y, btn.w, btn.h);
+      const sprite = f.sprites.idle.map((row) => row.replace(/[^.]/g, 'k'));
+      window.drawSprite(ctx, sprite, x + 2, y + 3);
+      ctx.fillStyle = C.yellow;
+      ctx.fillRect(x + 10, y + 14, 8, 6);
+      ctx.fillRect(x + 11, y + 10, 1, 4);
+      ctx.fillRect(x + 16, y + 10, 1, 4);
+      ctx.fillRect(x + 11, y + 10, 6, 1);
+      ctx.fillStyle = C.night;
+      ctx.fillRect(x + 13, y + 16, 2, 2);
+      return;
+    }
     window.drawSprite(ctx, f.sprites[hot ? 'victory' : 'idle'], x + 2, y + 3);
     // Team color stripe along the bottom.
     ctx.fillStyle = f.team;
@@ -466,10 +509,22 @@
     drawTextCentered(`PLAYER ${picker + 1}`, 18, PLAYER_COLORS[picker], 1, C.night);
 
     const hover = screens.select[selected];
-    const shown = hover && hover.portrait != null ? FIGHTERS[hover.portrait] : FIGHTERS[0];
-    drawTextCentered(shown.name, 68, shown.team, 2, C.night);
-    drawTextCentered(shown.tagline.toUpperCase(), 84, C.white, 1, C.night);
-    drawStatBars(shown, 94);
+    const hovered = hover && hover.portrait != null ? FIGHTERS[hover.portrait] : null;
+    const shown = hovered && !isLocked(hovered) ? hovered : FIGHTERS[picks[0] ?? 0];
+    if (hovered && isLocked(hovered)) {
+      drawTextCentered('???', 68, C.grey, 2, C.night);
+      drawTextCentered('LOCKED FIGHTER', 84, C.white, 1, C.night);
+      drawTextCentered('UNLOCK HIM TO PLAY', 100, C.grey, 1, C.night);
+    } else {
+      drawTextCentered(shown.name, 68, shown.team, 2, C.night);
+      drawTextCentered(shown.tagline.toUpperCase(), 84, C.white, 1, C.night);
+      drawStatBars(shown, 94);
+    }
+    if (flash && frame < flash.until) {
+      ctx.fillStyle = C.night;
+      ctx.fillRect(0, 26, W, 9);
+      drawTextCentered(flash.text, 27, Math.floor(frame / 6) % 2 ? C.yellow : C.white);
+    }
 
     // Big previews: player 1 on the left, player 2 on the right.
     const walk = Math.floor(frame / 12) % 2 ? 'walk1' : 'walk2';
@@ -557,6 +612,11 @@
   });
 
   window.addEventListener('keydown', (e) => {
+    if (screen === 'select' && /^[a-z]$/i.test(e.key)) {
+      typed = (typed + e.key.toUpperCase()).slice(-UNLOCK_CODE.length);
+      const secret = FIGHTERS.find((f) => f.id === 'glitch');
+      if (typed === UNLOCK_CODE && isLocked(secret)) unlock(secret);
+    }
     const count = screens[screen].length;
     if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'ArrowRight' || e.key === 'd') {
       selected = (selected + 1) % count;

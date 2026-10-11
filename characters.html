@@ -51,6 +51,8 @@
   .name { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .name h3 { font-size: 30px; margin: 0; line-height: 1; color: var(--team); }
   .name span { color: var(--muted); }
+  .badge { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; color: var(--bg); background: var(--accent); padding: 2px 8px; align-self: center; }
+  .unlock { font-size: 15px; }
 
   .poses { display: flex; flex-wrap: wrap; gap: 10px; }
   .frame { display: grid; gap: 4px; justify-items: center; }
@@ -86,7 +88,7 @@
   <header>
     <span class="label">Stickman Hit / 1v1 fighter roster / draft 2</span>
     <h1>Pick your stickman</h1>
-    <p class="lede">Four fighters, each drawn as a 24×24 pixel sprite with 7 poses: idle, two walk frames, jump, attack, getting hit and victory. Names are placeholders until the final names are picked.</p>
+    <p class="lede">Four starting fighters plus one secret one, each drawn as a 24×24 pixel sprite with 7 poses: idle, two walk frames, jump, attack, getting hit and victory. Names are placeholders until the final names are picked.</p>
   </header>
 
   <div class="stage"><canvas id="stage" width="256" height="72" aria-label="The four fighters trading hits on a grass strip"></canvas></div>
@@ -98,6 +100,7 @@
     <ul>
       <li>Every fighter gets exactly <strong>12 stat points</strong> spread across Power, Speed, Reach and Defense, so nobody is simply better than the others.</li>
       <li>Each fighter has one clear strength. BOXER is the even starter, NINJA is the fastest, SAMURAI has strong hits with good reach, and ROBOT has the most armor.</li>
+      <li>GLITCH is locked at the start, but he gets the same 12 points as everyone else. Unlocking him gives you a new way to play, not a stronger fighter. His Teleport is strong, so it needs a cooldown.</li>
       <li>Rough matchups: BOXER beats SAMURAI (gets inside the sword), SAMURAI beats ROBOT (Counter Slash punishes the slow Rocket Punch), ROBOT beats NINJA (armor shrugs off quick hits), NINJA beats BOXER (too fast to hit).</li>
     </ul>
     <p class="totals" id="totals"></p>
@@ -130,6 +133,7 @@
 
     const name = el('div', 'name');
     name.append(el('h3', null, ch.name), el('span', null, ch.tagline));
+    if (ch.locked) name.append(el('span', 'badge', 'Locked'));
 
     const poses = el('div', 'poses');
     POSE_ORDER.forEach((p) => {
@@ -164,6 +168,9 @@
     const special = el('div', 'special');
     special.append(el('span', 'label', 'Special move'), el('strong', null, ch.special.name), el('p', null, ch.special.text));
     right.append(special, el('p', 'bio', `“${ch.bio}”`));
+    if (ch.locked) {
+      right.append(el('p', 'unlock', 'How to unlock: for now, type GLITCH on the character select screen. Later this could be a reward, like winning 10 fights.'));
+    }
 
     const info = el('div', 'info');
     info.append(left, right);
