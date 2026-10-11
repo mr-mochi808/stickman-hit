@@ -606,8 +606,10 @@
   }
 
   // ---- Scaling & input ------------------------------------------------
+  // Scale to fit whatever holds the canvas (the whole window on index.html).
   function resize() {
-    const scale = Math.max(1, Math.floor(Math.min(window.innerWidth / W, window.innerHeight / H)));
+    const host = canvas.parentElement;
+    const scale = Math.max(1, Math.floor(Math.min(host.clientWidth / W, host.clientHeight / H)));
     canvas.style.width = `${W * scale}px`;
     canvas.style.height = `${H * scale}px`;
   }
