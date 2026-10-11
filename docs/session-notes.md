@@ -1,5 +1,7 @@
 # Stickman Hit: session notes
 
+> **Update (2026-10-11):** the second design session settled the whole game. See `game-design.md` for the vision and `build-plan.md` for the build order. Where this file disagrees with `game-design.md` (for example "two players, each picking a stickman", ROBOT, 24×24, Triple Jab, the GLITCH unlock, and the open questions), `game-design.md` wins.
+
 A record of what was built and decided in the first design session, so a new session can continue from here. The next session is for talking through the game's concept and mechanics in more detail.
 
 All work is on branch `claude/gallant-hopper-4rtmj7` in `mr-mochi808/stickman-hit`. There is no pull request yet.
