@@ -98,66 +98,9 @@
     drawText(str, x, y, color, scale);
   }
 
-  // ---- 16x16 sprites --------------------------------------------------
+  // ---- 16x16 icons ----------------------------------------------------
   // '.' transparent, other chars map to palette entries.
   const SPRITE_COLORS = { k: C.night, w: C.white, r: C.red, y: C.yellow, o: C.orange };
-
-  const STICK_IDLE = [
-    '................',
-    '......kkkk......',
-    '.....kwwwwk.....',
-    '.....kwkwkk.....',
-    '.....kwwwwk.....',
-    '......kkkk......',
-    '.......kk.......',
-    '.....kkkkkk.....',
-    '....k..kk..k....',
-    '.......kk.......',
-    '.......kk.......',
-    '......k..k......',
-    '.....k....k.....',
-    '.....k....k.....',
-    '....kk....kk....',
-    '................',
-  ];
-
-  const STICK_PUNCH = [
-    '................',
-    '......kkkk......',
-    '.....kwwwwk.....',
-    '.....kwkwkk.....',
-    '.....kwwwwk.....',
-    '......kkkk......',
-    '.......kk.......',
-    '.......kkkkkkkrr',
-    '.....k.kk.....rr',
-    '......kkk.......',
-    '.......kk.......',
-    '......k..k......',
-    '.....k.....k....',
-    '....k.......k...',
-    '...kk.......kk..',
-    '................',
-  ];
-
-  const STICK_HURT = [
-    '................',
-    '........kkkk....',
-    '.......kwwwwk...',
-    '.......kkwkwk...',
-    '.......kwwwwk...',
-    '........kkkk....',
-    '.......kk.......',
-    '...k..kkk..k....',
-    '....kkkk.kk.....',
-    '......kk........',
-    '......kk........',
-    '.....k..k.......',
-    '.....k...k......',
-    '....k....k......',
-    '...kk....kk.....',
-    '................',
-  ];
 
   const HIT_SPARK = [
     '................',
@@ -216,7 +159,7 @@
     '................',
   ];
 
-  function drawSprite(sprite, x, y, flip = false) {
+  function drawIcon(sprite, x, y, flip = false) {
     for (let row = 0; row < 16; row++) {
       for (let col = 0; col < 16; col++) {
         const ch = sprite[row][flip ? 15 - col : col];
@@ -265,7 +208,7 @@
 
   const screens = {
     title: [
-      { label: 'PLAY', icon: PLAY_ICON, y: TILE * 4 + 8, action: () => go('play') },
+      { label: 'PLAY', icon: PLAY_ICON, y: TILE * 4 + 8, action: () => go('select') },
       { label: 'SETTINGS', icon: GEAR, y: TILE * 5 + 16, action: () => go('settings') },
     ],
     settings: [
@@ -274,16 +217,53 @@
       { key: 'shake', label: 'SHAKE', y: TILE * 5 + 8 },
       { label: 'BACK', y: TILE * 6 + 16, action: () => go('title') },
     ],
-    play: [
-      { label: 'BACK', y: TILE * 6 + 16, action: () => go('title') },
+    // Four portrait boxes plus a small back button, filled in below.
+    select: [],
+    versus: [
+      { label: 'BACK', y: H - TILE - 2, action: () => go('title') },
     ],
   };
+
+  // ---- Character select -------------------------------------------------
+  const FIGHTERS = window.CHARACTERS;
+  const PORTRAIT = 28;
+  const PORTRAIT_GAP = 8;
+  const PORTRAIT_Y = 36;
+  const PORTRAIT_X = (W - (FIGHTERS.length * PORTRAIT + (FIGHTERS.length - 1) * PORTRAIT_GAP)) / 2;
+  const PLAYER_COLORS = [C.red, C.sky];
+
+  // picks[0] is player 1's fighter index, picks[1] is player 2's.
+  let picks = [];
+
+  FIGHTERS.forEach((f, i) => {
+    screens.select.push({
+      portrait: i,
+      x: PORTRAIT_X + i * (PORTRAIT + PORTRAIT_GAP),
+      y: PORTRAIT_Y,
+      w: PORTRAIT,
+      h: PORTRAIT,
+      action: () => {
+        picks.push(i);
+        if (picks.length === 2) go('versus');
+      },
+    });
+  });
+  screens.select.push({ label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: backFromSelect });
+
+  function backFromSelect() {
+    if (picks.length) {
+      selected = picks.pop();
+    } else {
+      go('title');
+    }
+  }
 
   let screen = 'title';
   let selected = 0;
   let pressed = -1;
 
   function go(next) {
+    if (next === 'select') picks = [];
     screen = next;
     selected = 0;
   }
@@ -305,7 +285,46 @@
     return btn.key ? `${btn.label}: ${settings[btn.key] ? 'ON' : 'OFF'}` : btn.label;
   }
 
+  function drawPortrait(btn, i) {
+    const hot = i === selected;
+    const picker = picks.length;
+    const lift = hot ? -2 : 0;
+    const x = btn.x;
+    const y = btn.y + lift;
+    const takenBy = picks.indexOf(btn.portrait);
+
+    ctx.fillStyle = C.night;
+    ctx.fillRect(x - 2, y - 2, btn.w + 4, btn.h + 4);
+    if (hot) {
+      ctx.fillStyle = PLAYER_COLORS[picker];
+      ctx.fillRect(x - 2, y - 2, btn.w + 4, btn.h + 4);
+    }
+    ctx.fillStyle = C.sky;
+    ctx.fillRect(x, y, btn.w, btn.h);
+    ctx.fillStyle = C.cyan;
+    ctx.fillRect(x, y, btn.w, 2);
+    const f = FIGHTERS[btn.portrait];
+    window.drawSprite(ctx, f.sprites[hot ? 'victory' : 'idle'], x + 2, y + 3);
+    // Team color stripe along the bottom.
+    ctx.fillStyle = f.team;
+    ctx.fillRect(x, y + btn.h - 2, btn.w, 2);
+
+    if (takenBy >= 0) drawText(`P${takenBy + 1}`, x + 1, y + 1, PLAYER_COLORS[takenBy]);
+  }
+
+  function drawSmallButton(btn, i) {
+    const hot = i === selected;
+    ctx.fillStyle = C.night;
+    ctx.fillRect(btn.x - 1, btn.y - 1, btn.w + 2, btn.h + 2);
+    ctx.fillStyle = hot ? C.orange : C.blue;
+    ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+    const tx = Math.round(btn.x + (btn.w - textWidth(btn.label)) / 2);
+    drawText(btn.label, tx, btn.y + 2, C.white);
+  }
+
   function drawButton(btn, i) {
+    if (btn.portrait != null) return drawPortrait(btn, i);
+    if (btn.small) return drawSmallButton(btn, i);
     const hot = i === selected;
     const down = i === pressed;
     const y = btn.y + (down ? 1 : 0);
@@ -321,7 +340,7 @@
     ctx.fillStyle = hot ? C.red : C.navy;
     ctx.fillRect(BTN_X, y + BTN_H - 2, BTN_W, 2);
 
-    if (btn.icon) drawSprite(btn.icon, BTN_X, y);
+    if (btn.icon) drawIcon(btn.icon, BTN_X, y);
 
     const label = buttonLabel(btn);
     const tx = Math.round(BTN_X + (BTN_W - textWidth(label)) / 2 + (btn.icon ? 6 : 0));
@@ -341,7 +360,7 @@
     phase: i * 7,
   }));
 
-  function drawBackground() {
+  function drawBackground(ground = true) {
     // Sky in 16px bands.
     const bands = [C.night, C.night, C.navy, C.navy, C.purple, C.red, C.orange];
     bands.forEach((color, i) => {
@@ -359,6 +378,12 @@
         ctx.fillStyle = C.white;
         ctx.fillRect(s.x, s.y, 1, 1);
       }
+    }
+
+    if (!ground) {
+      ctx.fillStyle = C.night;
+      ctx.fillRect(0, H - TILE * 2, W, TILE * 2);
+      return;
     }
 
     // Ground: one row of 16x16 grass/dirt tiles plus a dirt row below.
@@ -379,22 +404,31 @@
   }
 
   // ---- Title scene ----------------------------------------------------
+  const GROUND_Y = H - TILE * 2;
+
+  // A short fight loop: each beat is one pose for the attacker and defender.
+  function fightPose(beat, attacking) {
+    if (beat === 1) return attacking ? 'attack' : 'hit';
+    if (beat === 3) return attacking ? 'hit' : 'attack';
+    return 'idle';
+  }
+
+  function drawPair(a, b, x, offset, scale = 1) {
+    const beat = Math.floor((frame + offset) / 40) % 4;
+    const bob = beat % 2 === 0 && Math.floor(frame / 15) % 2 ? scale : 0;
+    const size = window.SPRITE_SIZE * scale;
+    const y = GROUND_Y - size + scale;
+    const gap = 22 * scale;
+    window.drawSprite(ctx, a.sprites[fightPose(beat, true)], x, y + bob, scale);
+    window.drawSprite(ctx, b.sprites[fightPose(beat, false)], x + gap, y + bob, scale, true);
+    if (beat === 1) drawIcon(HIT_SPARK, x + gap - 2, y + 4 * scale);
+    if (beat === 3) drawIcon(HIT_SPARK, x + 6, y + 4 * scale, true);
+  }
+
   function drawFighters() {
-    const groundY = H - TILE * 2 - TILE;
-    const cycle = frame % 80;
-    const punching = cycle >= 50 && cycle < 64;
-    const bob = Math.floor(frame / 15) % 2;
-
-    // Left fighter attacks, right fighter gets hit.
-    drawSprite(punching ? STICK_PUNCH : STICK_IDLE, TILE * 2, groundY + (punching ? 0 : bob));
-    drawSprite(punching ? STICK_HURT : STICK_IDLE, TILE * 3 + 2, groundY + (punching ? 0 : 1 - bob), true);
-    if (punching) drawSprite(HIT_SPARK, TILE * 3 - 2, groundY + 2);
-
-    // A second pair on the right, out of phase.
-    const punching2 = (cycle + 40) % 80 >= 50 && (cycle + 40) % 80 < 64;
-    drawSprite(punching2 ? STICK_HURT : STICK_IDLE, TILE * 12 - 2, groundY + (punching2 ? 0 : bob));
-    drawSprite(punching2 ? STICK_PUNCH : STICK_IDLE, TILE * 13, groundY + (punching2 ? 0 : 1 - bob), true);
-    if (punching2) drawSprite(HIT_SPARK, TILE * 12 + 2, groundY + 2, true);
+    const [boxer, ninja, samurai, robot] = FIGHTERS;
+    drawPair(boxer, samurai, TILE + 6, 0);
+    drawPair(ninja, robot, TILE * 11 + 4, 40);
   }
 
   function drawTitle() {
@@ -414,17 +448,62 @@
   // ---- Main loop ------------------------------------------------------
   let frame = 0;
 
+  function drawStatBars(f, y) {
+    const rows = [['POW', 'power'], ['SPD', 'speed'], ['RCH', 'reach'], ['DEF', 'defense']];
+    rows.forEach(([label, key], r) => {
+      const ry = y + r * 9;
+      drawText(label, 84, ry, C.grey);
+      for (let p = 0; p < 5; p++) {
+        ctx.fillStyle = p < f.stats[key] ? f.team : C.dark;
+        ctx.fillRect(108 + p * 13, ry, 11, 7);
+      }
+    });
+  }
+
+  function drawSelect() {
+    const picker = picks.length;
+    drawTextCentered('PICK YOUR FIGHTER', 6, C.yellow, 1, C.night);
+    drawTextCentered(`PLAYER ${picker + 1}`, 18, PLAYER_COLORS[picker], 1, C.night);
+
+    const hover = screens.select[selected];
+    const shown = hover && hover.portrait != null ? FIGHTERS[hover.portrait] : FIGHTERS[0];
+    drawTextCentered(shown.name, 68, shown.team, 2, C.night);
+    drawTextCentered(shown.tagline.toUpperCase(), 84, C.white, 1, C.night);
+    drawStatBars(shown, 94);
+
+    // Big previews: player 1 on the left, player 2 on the right.
+    const walk = Math.floor(frame / 12) % 2 ? 'walk1' : 'walk2';
+    const p1 = picks[0] != null ? FIGHTERS[picks[0]] : shown;
+    window.drawSprite(ctx, p1.sprites[picks[0] != null ? 'victory' : walk], 8, 62, 2);
+    if (picker === 1) window.drawSprite(ctx, shown.sprites[walk], W - 56, 62, 2, true);
+
+    drawText('ENTER: PICK  ESC: BACK', W - textWidth('ENTER: PICK  ESC: BACK') - 4, H - 13, C.grey);
+  }
+
+  function drawVersus() {
+    const a = FIGHTERS[picks[0]];
+    const b = FIGHTERS[picks[1]];
+    drawText(a.name, 8, 10, C.night, 2);
+    drawText(a.name, 7, 9, PLAYER_COLORS[0], 2);
+    const bx = W - 8 - textWidth(b.name, 2);
+    drawText(b.name, bx + 1, 10, C.night, 2);
+    drawText(b.name, bx, 9, PLAYER_COLORS[1], 2);
+    drawTextCentered('VS', 30, C.yellow, 2, C.red);
+    drawTextCentered('GAME COMING SOON', 50, C.white, 1, C.night);
+    drawPair(a, b, 76, 0, 2);
+  }
+
   function render() {
-    drawBackground();
+    drawBackground(screen !== 'select');
     if (screen === 'title') {
       drawTitle();
       drawFighters();
     } else if (screen === 'settings') {
       drawTextCentered('SETTINGS', TILE + 2, C.yellow, 2, C.night);
-    } else if (screen === 'play') {
-      drawTextCentered('GET READY!', TILE + 2, C.yellow, 2, C.night);
-      drawTextCentered('GAME COMING SOON', TILE * 3 + 8, C.white, 1, C.night);
-      drawFighters();
+    } else if (screen === 'select') {
+      drawSelect();
+    } else if (screen === 'versus') {
+      drawVersus();
     }
     screens[screen].forEach(drawButton);
   }
@@ -454,9 +533,10 @@
 
   function hitTest(e) {
     const { x, y } = toCanvas(e);
-    return screens[screen].findIndex(
-      (b) => x >= BTN_X && x < BTN_X + BTN_W && y >= b.y && y < b.y + BTN_H,
-    );
+    return screens[screen].findIndex((b) => {
+      const bx = b.x ?? BTN_X;
+      return x >= bx && x < bx + (b.w ?? BTN_W) && y >= b.y && y < b.y + (b.h ?? BTN_H);
+    });
   }
 
   canvas.addEventListener('pointermove', (e) => {
@@ -478,10 +558,10 @@
 
   window.addEventListener('keydown', (e) => {
     const count = screens[screen].length;
-    if (e.key === 'ArrowDown' || e.key === 's') {
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'ArrowRight' || e.key === 'd') {
       selected = (selected + 1) % count;
       blip(520);
-    } else if (e.key === 'ArrowUp' || e.key === 'w') {
+    } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'ArrowLeft' || e.key === 'a') {
       selected = (selected - 1 + count) % count;
       blip(520);
     } else if (e.key === 'Enter' || e.key === ' ') {
@@ -489,7 +569,8 @@
       e.preventDefault();
     } else if (e.key === 'Escape' && screen !== 'title') {
       blip(440);
-      go('title');
+      if (screen === 'select') backFromSelect();
+      else go('title');
     }
   });
 

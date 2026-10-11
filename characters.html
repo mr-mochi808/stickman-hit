@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Barlow:wght@400;600&display=swap">
 <style>
-  /* Layout: arcade cabinet at dusk. One fight strip up top, then a 2x2 grid of fighter cards. */
+  /* Layout: arcade cabinet at dusk. A fight strip up top, then one full-width card per fighter with its pose sheet. */
   :root {
     color-scheme: dark;
     --bg: #1a1c2c;
@@ -14,7 +14,7 @@
     --accent: #ffcd75;
     --hot: #ef7d57;
     --pip-off: #333c57;
-    --frame-bg: #94b0c2;
+    --frame-bg: #41a6f6;
     --display: 'Silkscreen', 'Courier New', monospace;
     --body: 'Barlow', 'Segoe UI', system-ui, sans-serif;
   }
@@ -28,47 +28,44 @@
     padding-block: 32px 64px;
   }
   .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 40px; }
-  h1, h2, h3, .label, .chip { font-family: var(--display); font-weight: 400; }
+  h1, h2, h3, .label { font-family: var(--display); font-weight: 400; }
   h1 { font-size: clamp(28px, 6vw, 48px); line-height: 1.1; margin: 0; color: var(--accent); text-shadow: 3px 3px 0 #b13e53; text-wrap: balance; }
   h2 { font-size: 20px; margin: 0; color: var(--accent); letter-spacing: 0.04em; }
   p { margin: 0; }
   .lede { color: var(--muted); max-width: 62ch; }
   header { display: grid; gap: 12px; }
 
-  .stage { border: 3px solid var(--line); background: var(--panel); overflow: hidden; }
+  .stage { border: 3px solid var(--line); overflow: hidden; }
   .stage canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 
-  .roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 24px; }
+  .roster { display: grid; gap: 24px; }
   .card {
     background: var(--panel);
     border: 3px solid var(--line);
     border-top: 6px solid var(--team);
     padding: 20px;
     display: grid;
-    grid-template-columns: auto 1fr;
     gap: 20px;
-    align-items: start;
   }
   .card > * { min-width: 0; }
-  @media (max-width: 520px) { .card { grid-template-columns: 1fr; } }
+  .name { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .name h3 { font-size: 30px; margin: 0; line-height: 1; color: var(--team); }
+  .name span { color: var(--muted); }
 
-  .frames { display: grid; gap: 10px; justify-items: center; }
+  .poses { display: flex; flex-wrap: wrap; gap: 10px; }
   .frame { display: grid; gap: 4px; justify-items: center; }
   .frame canvas { width: 96px; height: 96px; image-rendering: pixelated; background: var(--frame-bg); border: 2px solid var(--line); }
-  .frame canvas.actual { width: 16px; height: 16px; border: 0; outline: 4px solid var(--frame-bg); margin: 4px; }
+  .frame canvas.actual { width: 24px; height: 24px; border: 0; outline: 4px solid var(--frame-bg); margin: 36px 4px; }
   .label { font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
-  .frames-row { display: flex; gap: 10px; }
 
-  .info { display: grid; gap: 14px; }
-  .name { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .name h3 { font-size: 28px; margin: 0; line-height: 1; color: var(--team); }
-  .name span { color: var(--muted); font-size: 14px; }
+  .info { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px 32px; }
+  .info > * { min-width: 0; display: grid; gap: 14px; align-content: start; }
   .gear { font-weight: 600; }
   .style { color: var(--muted); font-size: 15px; }
 
   .stats { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 12px; align-items: center; }
   .pips { display: flex; gap: 3px; }
-  .pip { width: 14px; height: 10px; background: var(--pip-off); }
+  .pip { width: 16px; height: 10px; background: var(--pip-off); }
   .pip.on { background: var(--team); }
   .num { font-family: var(--display); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -87,12 +84,12 @@
 
 <div class="wrap">
   <header>
-    <span class="label">Stickman Hit / 1v1 fighter roster / draft 1</span>
+    <span class="label">Stickman Hit / 1v1 fighter roster / draft 2</span>
     <h1>Pick your stickman</h1>
-    <p class="lede">Four fighters with the same plain stick body. What tells them apart is their gear: a headband, a hard hat, a ninja mask and a cap. Every sprite is 16×16 pixels, shown here at 6× zoom and at real size.</p>
+    <p class="lede">Four fighters, each drawn as a 24×24 pixel sprite with 7 poses: idle, two walk frames, jump, attack, getting hit and victory. Names are placeholders until the final names are picked.</p>
   </header>
 
-  <div class="stage"><canvas id="stage" width="256" height="64" aria-label="All four fighters trading hits on a grass strip"></canvas></div>
+  <div class="stage"><canvas id="stage" width="256" height="72" aria-label="The four fighters trading hits on a grass strip"></canvas></div>
 
   <section class="roster" id="roster"></section>
 
@@ -100,8 +97,8 @@
     <h2>How the roster is balanced</h2>
     <ul>
       <li>Every fighter gets exactly <strong>12 stat points</strong> spread across Power, Speed, Reach and Defense, so nobody is simply better than the others.</li>
-      <li>Each fighter has one clear strength and one clear weakness. BONK is very strong but very slow. ZIP is very fast but easy to knock out. TWIG has very long reach but is weak up close. JAB is the middle-of-the-road starter.</li>
-      <li>Rough matchups: JAB beats TWIG (gets in close), TWIG beats BONK (keeps him at a distance), BONK beats ZIP (one hit is enough), ZIP beats JAB (too fast to hit).</li>
+      <li>Each fighter has one clear strength. BOXER is the even starter, NINJA is the fastest, SAMURAI has strong hits with good reach, and ROBOT has the most armor.</li>
+      <li>Rough matchups: BOXER beats SAMURAI (gets inside the sword), SAMURAI beats ROBOT (Counter Slash punishes the slow Rocket Punch), ROBOT beats NINJA (armor shrugs off quick hits), NINJA beats BOXER (too fast to hit).</li>
     </ul>
     <p class="totals" id="totals"></p>
   </section>
@@ -110,7 +107,7 @@
 <script src="characters.js"></script>
 <script>
   const STAT_NAMES = ['power', 'speed', 'reach', 'defense'];
-  const TEAM = { jab: '#b13e53', bonk: '#ffcd75', zip: '#3b5dc9', twig: '#38b764' };
+  const POSE_LABELS = { idle: 'Idle', walk1: 'Walk 1', walk2: 'Walk 2', jump: 'Jump', attack: 'Attack', hit: 'Hit', victory: 'Victory' };
 
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -121,7 +118,7 @@
 
   function spriteCanvas(sprite, cls) {
     const c = el('canvas', cls);
-    c.width = 16; c.height = 16;
+    c.width = SPRITE_SIZE; c.height = SPRITE_SIZE;
     drawSprite(c.getContext('2d'), sprite, 0, 0, 1);
     return c;
   }
@@ -129,35 +126,30 @@
   const roster = document.getElementById('roster');
   CHARACTERS.forEach((ch) => {
     const card = el('article', 'card');
-    card.style.setProperty('--team', TEAM[ch.id]);
+    card.style.setProperty('--team', ch.team);
 
-    const frames = el('div', 'frames');
-    const row = el('div', 'frames-row');
-    for (const [label, sprite] of [['Idle', ch.idle], ['Attack', ch.attack]]) {
-      const f = el('div', 'frame');
-      const c = spriteCanvas(sprite);
-      c.setAttribute('aria-label', `${ch.name} ${label.toLowerCase()} sprite`);
-      f.append(c, el('span', 'label', label));
-      row.append(f);
-    }
-    const actual = el('div', 'frame');
-    actual.append(spriteCanvas(ch.idle, 'actual'), el('span', 'label', '1× real size'));
-    frames.append(row, actual);
-
-    const info = el('div', 'info');
     const name = el('div', 'name');
     name.append(el('h3', null, ch.name), el('span', null, ch.tagline));
 
+    const poses = el('div', 'poses');
+    POSE_ORDER.forEach((p) => {
+      const f = el('div', 'frame');
+      const c = spriteCanvas(ch.sprites[p]);
+      c.setAttribute('aria-label', `${ch.name} ${POSE_LABELS[p].toLowerCase()} pose`);
+      f.append(c, el('span', 'label', POSE_LABELS[p]));
+      poses.append(f);
+    });
+    const actual = el('div', 'frame');
+    actual.append(spriteCanvas(ch.sprites.idle, 'actual'), el('span', 'label', 'Real size'));
+    poses.append(actual);
+
+    const left = el('div');
     const stats = el('div', 'stats');
     STAT_NAMES.forEach((s) => {
       const pips = el('div', 'pips');
       for (let i = 0; i < 5; i++) pips.append(el('span', 'pip' + (i < ch.stats[s] ? ' on' : '')));
       stats.append(el('span', 'label', s), pips, el('span', 'num', `${ch.stats[s]}/5`));
     });
-
-    const special = el('div', 'special');
-    special.append(el('span', 'label', 'Special move'), el('strong', null, ch.special.name), el('p', null, ch.special.text));
-
     const swatches = el('div', 'swatches');
     swatches.append(el('span', 'label', 'Colors'));
     ch.colors.forEach((k) => {
@@ -166,9 +158,16 @@
       s.title = PALETTE[k];
       swatches.append(s);
     });
+    left.append(el('p', 'gear', ch.gear), el('p', 'style', ch.style), stats, swatches);
 
-    info.append(name, el('p', 'gear', ch.gear), el('p', 'style', ch.style), stats, special, el('p', 'bio', `“${ch.bio}”`), swatches);
-    card.append(frames, info);
+    const right = el('div');
+    const special = el('div', 'special');
+    special.append(el('span', 'label', 'Special move'), el('strong', null, ch.special.name), el('p', null, ch.special.text));
+    right.append(special, el('p', 'bio', `“${ch.bio}”`));
+
+    const info = el('div', 'info');
+    info.append(left, right);
+    card.append(name, poses, info);
     roster.append(card);
   });
 
@@ -180,25 +179,22 @@
   const stage = document.getElementById('stage');
   const ctx = stage.getContext('2d');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const [jab, bonk, zip, twig] = CHARACTERS;
+  const [boxer, ninja, samurai, robot] = CHARACTERS;
   let t = 0;
 
   function drawStage() {
-    ctx.fillStyle = '#29366f'; ctx.fillRect(0, 0, 256, 16);
-    ctx.fillStyle = '#5d275d'; ctx.fillRect(0, 16, 256, 16);
-    ctx.fillStyle = '#b13e53'; ctx.fillRect(0, 32, 256, 16);
-    ctx.fillStyle = '#257179'; ctx.fillRect(0, 48, 256, 16);
-    ctx.fillStyle = '#38b764'; ctx.fillRect(0, 48, 256, 3);
+    const bands = ['#29366f', '#5d275d', '#b13e53', '#ef7d57'];
+    bands.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(0, i * 14, 256, 14); });
+    ctx.fillStyle = '#257179'; ctx.fillRect(0, 56, 256, 16);
+    ctx.fillStyle = '#38b764'; ctx.fillRect(0, 56, 256, 3);
 
-    const a = Math.floor(t / 45) % 2 === 0;
-    const b = !a;
-    drawSprite(ctx, a ? jab.attack : jab.idle, 40, 32);
-    drawSprite(ctx, twig.idle, 62, 32, 1, true);
-    drawSprite(ctx, b ? zip.attack : zip.idle, 168, 32);
-    drawSprite(ctx, b ? bonk.idle : bonk.attack, 192, 32, 1, true);
-    ctx.fillStyle = '#ffcd75';
-    ctx.font = '8px Silkscreen, monospace';
-    ctx.fillText('VS', 120, 20);
+    const beat = Math.floor(t / 40) % 4;
+    const walk = Math.floor(t / 12) % 2 ? 'walk1' : 'walk2';
+    // Left pair: BOXER vs SAMURAI. Right pair: NINJA vs ROBOT.
+    drawSprite(ctx, boxer.sprites[beat === 1 ? 'attack' : beat === 3 ? 'hit' : 'idle'], 36, 34);
+    drawSprite(ctx, samurai.sprites[beat === 1 ? 'hit' : beat === 3 ? 'attack' : 'idle'], 58, 34, 1, true);
+    drawSprite(ctx, ninja.sprites[beat === 0 ? 'attack' : beat === 2 ? 'jump' : walk], 172, beat === 2 ? 30 : 34);
+    drawSprite(ctx, robot.sprites[beat === 0 ? 'hit' : beat === 2 ? 'attack' : 'idle'], 196, 34, 1, true);
   }
 
   function tick() {
