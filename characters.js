@@ -194,16 +194,16 @@
   }
 
   // Filled 11px head with outline and a shaded lower-left crescent.
-  function inHead(x, y, cx, cy) {
-    return (x - cx) ** 2 + (y - cy) ** 2 <= 26;
+  function inHead(x, y, cx, cy, r2 = 26) {
+    return (x - cx) ** 2 + (y - cy) ** 2 <= r2;
   }
 
-  function head(g, [cx, cy], fill, shade, outline = 'k') {
+  function head(g, [cx, cy], fill, shade, outline = 'k', r2 = 26) {
+    const inside = (x, y) => inHead(x, y, cx, cy, r2);
     for (let y = cy - 6; y <= cy + 6; y++) {
       for (let x = cx - 6; x <= cx + 6; x++) {
-        if (!inHead(x, y, cx, cy)) continue;
-        const edge = !inHead(x + 1, y, cx, cy) || !inHead(x - 1, y, cx, cy)
-          || !inHead(x, y + 1, cx, cy) || !inHead(x, y - 1, cx, cy);
+        if (!inside(x, y)) continue;
+        const edge = !inside(x + 1, y) || !inside(x - 1, y) || !inside(x, y + 1) || !inside(x, y - 1);
         const shaded = (x - cx - 1.5) ** 2 + (y - cy + 1.5) ** 2 > 32;
         px(g, x, y, edge ? outline : shaded ? shade : fill);
       }
@@ -257,18 +257,19 @@
     const g = grid();
     const front = gear.bodyFront || 'k';
     const back = gear.bodyBack || 'D';
+    const lw = gear.limb || 2;
     gear.back?.(g, p);
     // Back limbs in a lighter tone so they read as further away.
-    line(g, p.hip, p.bK, back, 2); line(g, p.bK, p.bF, back, 2);
+    line(g, p.hip, p.bK, back, lw); line(g, p.bK, p.bF, back, lw);
     shoe(g, p.bF, gear.shoeBack || back);
-    line(g, p.neck, p.bE, back, 2); line(g, p.bE, p.bH, back, 2);
+    line(g, p.neck, p.bE, back, lw); line(g, p.bE, p.bH, back, lw);
     line(g, p.neck, p.hip, front, 2);
-    line(g, p.hip, p.fK, front, 2); line(g, p.fK, p.fF, front, 2);
+    line(g, p.hip, p.fK, front, lw); line(g, p.fK, p.fF, front, lw);
     shoe(g, p.fF, gear.shoe || front);
     gear.torso?.(g, p);
     if (gear.head) gear.head(g, p); else { head(g, p.head, 'w', 's'); face(g, p.head, p.face); }
     gear.hat?.(g, p);
-    if (gear.frontArm) gear.frontArm(g, p); else { line(g, p.neck, p.fE, front, 2); line(g, p.fE, p.fH, front, 2); }
+    if (gear.frontArm) gear.frontArm(g, p); else { line(g, p.neck, p.fE, front, lw); line(g, p.fE, p.fH, front, lw); }
     if (gear.hands) gear.hands(g, p); else { fist(g, p.bH, back); fist(g, p.fH, front); }
     gear.front?.(g, p);
     gear.post?.(g, p);
@@ -507,6 +508,46 @@
     },
   };
 
+  // The Bot Brute: the first boss. A muscle-man bot, only a little bigger than the player.
+  const BRUTE = {
+    bodyFront: 'S',
+    bodyBack: 'D',
+    limb: 3,
+    torso(g, { neck: [nx, ny], hip: [hx, hy] }) {
+      // Broad chest that narrows to the waist.
+      for (let k = 0; k <= 6; k++) {
+        const t = k / 6;
+        const x = Math.round(nx + (hx - nx) * t);
+        const y = Math.round(ny + (hy - ny) * t);
+        const half = Math.round(4 - 2 * t);
+        rect(g, x - half, y, half * 2 + 2, 1, 'S');
+      }
+      // Pecs and a belt.
+      px(g, nx - 1, ny + 2, 's'); px(g, nx + 2, ny + 2, 's');
+      rect(g, hx - 2, hy - 1, 6, 1, 'D');
+      px(g, hx + 1, hy - 1, 'r');
+    },
+    head(g, p) {
+      const [cx, cy] = p.head;
+      head(g, [cx, cy + 1], 's', 'S', 'D', 19);
+      const y = cy + 1;
+      // Heavy brow over blank eyes, and Cyborg's red chip.
+      if (p.face === 'hit') {
+        px(g, cx, y - 1, 'D'); px(g, cx + 1, y, 'D'); px(g, cx + 3, y - 1, 'D'); px(g, cx + 2, y, 'D');
+      } else {
+        rect(g, cx - 1, y - 2, 6, 1, 'D');
+        rect(g, cx, y, 2, 1, 'D'); rect(g, cx + 3, y, 2, 1, 'D');
+      }
+      rect(g, cx + 1, y + 2, 3, 1, 'D');
+      px(g, cx - 2, y - 3, 'r');
+    },
+    hands(g, p) {
+      ball(g, add(p.bH, [0.5, 0.5]), 'D', 'S', 'k');
+      ball(g, add(p.fH, [0.5, 0.5]), 'S', 's', 'D');
+    },
+    shoe: 'D',
+  };
+
   // The person a bot turns back into after it is beaten (shirt color varies).
   function personGear(shirt) {
     return {
@@ -516,7 +557,7 @@
     };
   }
 
-  const GEAR = { boxer: BOXER, ninja: NINJA, samurai: SAMURAI, cyborg: CYBORG, glitch: GLITCH, bot: BOT };
+  const GEAR = { boxer: BOXER, ninja: NINJA, samurai: SAMURAI, cyborg: CYBORG, glitch: GLITCH, bot: BOT, brute: BRUTE };
   const SHIRTS = ['r', 'o', 'y', 'g', 'c', 'b', 'm'];
   SHIRTS.forEach((c) => { GEAR[`person-${c}`] = personGear(c); });
 

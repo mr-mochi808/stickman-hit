@@ -144,6 +144,44 @@
     '................',
   ];
 
+  const BOLT_ICON = [
+    '................',
+    '................',
+    '.........kk.....',
+    '........kyk.....',
+    '.......kyyk.....',
+    '......kyyk......',
+    '.....kyyyykk....',
+    '....kyyyyyyk....',
+    '....kkkyyyk.....',
+    '......kyyk......',
+    '.....kyyk.......',
+    '.....kyk........',
+    '.....kk.........',
+    '................',
+    '................',
+    '................',
+  ];
+
+  const LOCK_ICON = [
+    '................',
+    '................',
+    '......kkkk......',
+    '.....kwkkwk.....',
+    '.....kk..kk.....',
+    '.....kk..kk.....',
+    '....kkkkkkkk....',
+    '....kyyyyyyk....',
+    '....kyyookyk....',
+    '....kyyookyk....',
+    '....kyyyyyyk....',
+    '....kyyyyyyk....',
+    '....kkkkkkkk....',
+    '................',
+    '................',
+    '................',
+  ];
+
   const PLAY_ICON = [
     '................',
     '................',
@@ -180,6 +218,17 @@
     Object.assign(settings, JSON.parse(localStorage.getItem('stickman-hit-settings')) || {});
   } catch (e) { /* storage unavailable: keep defaults */ }
 
+  let progress = { cleared: 0 };
+  try {
+    Object.assign(progress, JSON.parse(localStorage.getItem('stickman-hit-progress')) || {});
+  } catch (e) { /* storage unavailable: start fresh */ }
+
+  function saveProgress() {
+    try {
+      localStorage.setItem('stickman-hit-progress', JSON.stringify(progress));
+    } catch (e) { /* ignore */ }
+  }
+
   function saveSettings() {
     try {
       localStorage.setItem('stickman-hit-settings', JSON.stringify(settings));
@@ -212,8 +261,17 @@
 
   const screens = {
     title: [
-      { label: 'PLAY', icon: PLAY_ICON, y: TILE * 4 + 8, action: () => go('difficulty') },
-      { label: 'SETTINGS', icon: GEAR, y: TILE * 5 + 16, action: () => go('settings') },
+      { label: 'PLAY', icon: PLAY_ICON, y: 58, action: () => { difficultyFor = 'main'; go('difficulty'); } },
+      { label: 'QUICK FIGHT', icon: BOLT_ICON, y: 77, quick: true, action: () => {
+        if (progress.cleared < 1) {
+          blip(160);
+          toast = { text: 'BEAT LEVEL 1 TO UNLOCK QUICK FIGHT', until: frame + 120 };
+          return;
+        }
+        difficultyFor = 'quick';
+        go('difficulty');
+      } },
+      { label: 'SETTINGS', icon: GEAR, y: 96, action: () => go('settings') },
     ],
     settings: [
       { key: 'sound', label: 'SOUND', y: TILE * 3 },
@@ -222,11 +280,13 @@
       { label: 'BACK', y: TILE * 6 + 16, action: () => go('title') },
     ],
     difficulty: [
-      { label: 'EASY', y: TILE * 2 + 8, action: () => startFight('easy') },
-      { label: 'NORMAL', y: TILE * 3 + 12, action: () => startFight('normal') },
-      { label: 'HARD', y: TILE * 4 + 16, action: () => startFight('hard') },
+      { label: 'EASY', y: TILE * 2 + 8, action: () => pickDifficulty('easy') },
+      { label: 'NORMAL', y: TILE * 3 + 12, action: () => pickDifficulty('normal') },
+      { label: 'HARD', y: TILE * 4 + 16, action: () => pickDifficulty('hard') },
       { label: 'BACK', y: TILE * 6 + 8, action: () => go('title') },
     ],
+    // Main Mode map: 5 levels and the boss, filled in below.
+    map: [],
     fight: [],
     // Character select (for Quick Fight later): portrait boxes plus a back button, filled in below.
     select: [],
@@ -300,28 +360,142 @@
   let screen = 'title';
   let selected = 0;
   let pressed = -1;
+  let toast = null;
 
   function go(next) {
     if (next === 'select') picks = [];
-    if (next !== 'fight') fight = null;
+    toast = null;
+    if (next !== 'fight') { fight = null; window.stickFight = null; }
     screen = next;
-    selected = next === 'difficulty' ? 1 : 0;
+    selected = next === 'difficulty' ? 1 : next === 'map' ? Math.min(progress.cleared, MAP_NODES - 1) : 0;
+  }
+
+  // ---- Main Mode map -------------------------------------------------------
+  const MAP_NODES = 6; // levels 1-5, then the Bot Brute
+  const NODE = 24;
+  const NODE_GAP = 12;
+  const NODE_Y = 62;
+  const NODE_X = (W - (MAP_NODES * NODE + (MAP_NODES - 1) * NODE_GAP)) / 2;
+  let difficultyFor = 'main';
+  let mainDifficulty = 'normal';
+
+  for (let k = 0; k < MAP_NODES; k++) {
+    screens.map.push({
+      node: k,
+      x: NODE_X + k * (NODE + NODE_GAP),
+      y: NODE_Y,
+      w: NODE,
+      h: NODE,
+      action: () => {
+        if (k > progress.cleared) {
+          blip(160);
+          toast = { text: `BEAT LEVEL ${k} FIRST`, until: frame + 90 };
+          return;
+        }
+        startNode(k);
+      },
+    });
+  }
+  screens.map.push({ label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: () => go('title') });
+
+  function startNode(k) {
+    startFight(mainDifficulty, k < 5 ? { kind: 'level', level: k + 1 } : { kind: 'boss' });
+  }
+
+  function pickDifficulty(d) {
+    if (difficultyFor === 'quick') {
+      startFight(d, { kind: 'quick' });
+    } else {
+      mainDifficulty = d;
+      go('map');
+    }
   }
 
   // ---- The fight ---------------------------------------------------------
   let fight = null;
 
-  function startFight(difficulty) {
+  function startFight(difficulty, mode) {
     fight = window.StickFight.create({
       ui: { drawText, textWidth, C, blip, settings },
       difficulty,
+      mode,
+      // Progress saves automatically the moment a level is cleared.
+      onLevelClear: (n) => {
+        if (n > progress.cleared) {
+          progress.cleared = n;
+          saveProgress();
+        }
+      },
       onExit: (action) => {
-        if (action === 'again') startFight(difficulty);
-        else go('title');
+        if (action === 'again') {
+          startFight(difficulty, mode);
+        } else if (action === 'next' || action === 'map') {
+          go('map');
+          if (action === 'next') selected = Math.min(progress.cleared, MAP_NODES - 1);
+          else if (mode.kind !== 'quick') selected = mode.kind === 'boss' ? 5 : mode.level - 1;
+        } else {
+          go('title');
+        }
       },
     });
     screen = 'fight';
     window.stickFight = fight;
+  }
+
+  function drawNode(btn, i) {
+    const k = btn.node;
+    const hot = i === selected;
+    const cleared = k < progress.cleared;
+    const open = k <= progress.cleared;
+    const boss = k === MAP_NODES - 1;
+    const { x, y } = btn;
+    ctx.fillStyle = hot ? C.yellow : C.night;
+    ctx.fillRect(x - 2, y - 2, NODE + 4, NODE + 4);
+    ctx.fillStyle = !open ? C.dark : cleared ? C.green : boss ? C.red : C.blue;
+    ctx.fillRect(x, y, NODE, NODE);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(x, y, NODE, 2);
+    if (!open) {
+      drawIcon(LOCK_ICON, x + 4, y + 4);
+    } else if (boss) {
+      drawText('B', x + 9, y + 5, C.white);
+      drawText('OSS', x + 3, y + 14, C.white);
+    } else {
+      drawText(String(k + 1), x + 6, y + 6, C.night, 2);
+      drawText(String(k + 1), x + 5, y + 5, C.white, 2);
+    }
+    if (cleared) {
+      // Check mark.
+      ctx.fillStyle = C.yellow;
+      [[17, 3], [18, 2], [19, 1], [16, 4], [15, 5], [14, 4], [13, 3]].forEach(([dx, dy]) => ctx.fillRect(x + dx, y + dy + 1, 2, 2));
+    }
+  }
+
+  function drawMap() {
+    drawTextCentered('GRASSY FIELDS', 6, C.yellow, 2, C.night);
+    drawTextCentered(`MAIN MODE  ${mainDifficulty.toUpperCase()}`, 22, C.grey, 1, C.night);
+    // The path between levels.
+    ctx.fillStyle = C.yellow;
+    for (let x = NODE_X + NODE; x < NODE_X + (MAP_NODES - 1) * (NODE + NODE_GAP); x += 4) {
+      ctx.fillRect(x, NODE_Y + NODE / 2 - 1, 2, 2);
+    }
+    // The Ninja stands on the chosen level.
+    const btn = screens.map[selected];
+    if (btn && btn.node != null) {
+      const ninja = FIGHTERS.find((f) => f.id === 'ninja');
+      const bob = Math.floor(frame / 20) % 2;
+      window.drawSprite(ctx, ninja.sprites[Math.floor(frame / 12) % 2 ? 'walk1' : 'idle'], btn.x - 2, NODE_Y - 30 + bob);
+      const k = btn.node;
+      const info = k < 5
+        ? [`LEVEL ${k + 1}: 3 BOTS IN A ROW, 60 SECONDS EACH`, 'HEALTH CARRIES OVER BETWEEN BOTS']
+        : ['BOSS: THE BOT BRUTE', 'BEST OF 3 ROUNDS, 90 SECONDS EACH'];
+      drawTextCentered(info[0], 94, C.white, 1, C.night);
+      drawTextCentered(info[1], 104, C.grey, 1, C.night);
+    }
+    if (progress.cleared >= MAP_NODES) {
+      drawTextCentered('CLEARED! THE DOJO IS NEXT (COMING SOON)', 116, C.green, 1, C.night);
+    }
+    drawText('ENTER: START  ESC: BACK', W - textWidth('ENTER: START  ESC: BACK') - 4, H - 13, C.grey);
   }
 
   function activate(i) {
@@ -394,6 +568,7 @@
   }
 
   function drawButton(btn, i) {
+    if (btn.node != null) return drawNode(btn, i);
     if (btn.portrait != null) return drawPortrait(btn, i);
     if (btn.small) return drawSmallButton(btn, i);
     const hot = i === selected;
@@ -411,7 +586,8 @@
     ctx.fillStyle = hot ? C.red : C.navy;
     ctx.fillRect(BTN_X, y + BTN_H - 2, BTN_W, 2);
 
-    if (btn.icon) drawIcon(btn.icon, BTN_X, y);
+    const locked = btn.quick && progress.cleared < 1;
+    if (btn.icon) drawIcon(locked ? LOCK_ICON : btn.icon, BTN_X, y);
 
     const label = buttonLabel(btn);
     const tx = Math.round(BTN_X + (BTN_W - textWidth(label)) / 2 + (btn.icon ? 6 : 0));
@@ -513,7 +689,8 @@
     }
     drawText(text, x, y + 2, C.red, 2);
     drawText(text, x, y, C.yellow, 2);
-    drawTextCentered('PRESS ENTER OR CLICK', TILE * 3 - 1, C.grey);
+    if (toast && frame < toast.until) drawTextCentered(toast.text, TILE * 3 - 1, frame % 12 < 6 ? C.yellow : C.white);
+    else drawTextCentered('PRESS ENTER OR CLICK', TILE * 3 - 1, C.grey);
   }
 
   // ---- Main loop ------------------------------------------------------
@@ -577,7 +754,7 @@
   }
 
   function render() {
-    drawBackground(screen !== 'select');
+    drawBackground(screen !== 'select' && screen !== 'map');
     if (screen === 'title') {
       drawTitle();
       drawFighters();
@@ -587,9 +764,12 @@
       drawSelect();
     } else if (screen === 'versus') {
       drawVersus();
+    } else if (screen === 'map') {
+      drawMap();
+      if (toast && frame < toast.until) drawTextCentered(toast.text, 34, C.yellow, 1, C.night);
     } else if (screen === 'difficulty') {
       drawTextCentered('CHOOSE DIFFICULTY', 10, C.yellow, 1, C.night);
-      drawTextCentered('NINJA VS BOTS IN THE GRASSY FIELDS', 22, C.white, 1, C.night);
+      drawTextCentered(difficultyFor === 'quick' ? 'QUICK FIGHT: NINJA VS ONE BOT' : 'MAIN MODE: THE GRASSY FIELDS', 22, C.white, 1, C.night);
     }
     screens[screen].forEach(drawButton);
   }

@@ -4,7 +4,10 @@ Build order for the game described in `game-design.md`. Each step ends with some
 
 ## Progress
 
-**Steps 1 to 4 are built** and waiting for play-testing. Play → choose Easy / Normal / Hard → Ninja vs one bot on the Grassy Fields.
+**Steps 1 to 5 are built** and waiting for play-testing. Play → Easy / Normal / Hard → the Grassy Fields map → levels 1-5 (3 bots each) → the Bot Brute boss (best of 3). Quick Fight (one bot) unlocks after level 1.
+
+- Step 5 details: health carries over between the 3 bots and refills each level; bots get a little tougher each level; beaten bots stay on the field asleep; lose = restart that level; progress saves in the browser (`stickman-hit-progress`) the moment a level is cleared. The Bot Brute is a bulky gray bot that hits 35% harder and walks slower.
+- After the first session's feedback ("the combo bar only shows sometimes"): the bar only appears when the first Space punch lands. The first punch now reaches a little further, a popup says why it missed (TOO FAR / DUCKED! / JUMPED!), only your own timing bar is shown (the bot's combos show as its hit counter), and the first few bars are labelled "SPACE ON YELLOW".
 
 - All five fighters, plus the gray bot and the sleeping person a bot turns back into, are drawn at 28×28. The fight blends smoothly between poses. ROBOT is renamed CYBORG and the Boxer's special is now Haymaker (in the data; only the Ninja is playable so far).
 - Code: `characters.js` (sprites, poses, animations), `fight.js` (the fight, HUD, computer opponent), `title.js` (menus; Play now opens the difficulty screen).
@@ -44,7 +47,7 @@ The goal is the Ninja fighting one bot on the Grassy Fields.
 - **Easy / Normal / Hard.**
 - Random high and low attacks. Combos on Normal and Hard, and mostly combos on Hard.
 
-## Step 5: Main Mode, Grassy Fields
+## Step 5: Main Mode, Grassy Fields (built)
 
 - The level structure: **3 bots per level**, health carries over between bots and refills between levels.
 - **5 levels, then the Bot Brute** (best of 3, 90-second rounds).

@@ -1,8 +1,10 @@
 // Stickman Hit - the fight.
-// Ninja vs a bot on the Grassy Fields, following docs/game-design.md:
+// Ninja vs bots on the Grassy Fields, following docs/game-design.md:
 // 1,000 health, combos with a timing bar, strong attack, low kick and slam,
 // ducking with a time limit, a special meter with a freeze-frame Dash Kick,
 // a 60-second timer, KO, and a computer opponent on Easy / Normal / Hard.
+// Modes: a single Quick Fight, a Main Mode level (3 bots in a row, health carries
+// over), or the Bot Brute boss (best of 3 rounds, 90 seconds each).
 // All numbers are starting points to tune by play-testing.
 (() => {
   const W = 256;
@@ -16,6 +18,9 @@
 
   const HP = 1000;
   const ROUND_SECONDS = 60;
+  const BOSS_SECONDS = 90;
+  const LEVEL_ENEMIES = 3;
+  const BOSS_ROUNDS_TO_WIN = 2;
   const COMBO_MAX = 7;
   const DMG = {
     first: 20, perfect: 30, good: 12, strong: 50, low: 30,
@@ -56,23 +61,46 @@
     return { left: false, right: false, up: false, down: false, pUp: false, pCombo: false, pStrong: false, pSpecial: false };
   }
 
-  function create({ ui, difficulty = 'normal', onExit }) {
+  // Bots get a little tougher with each level of the Grassy Fields.
+  function tunedAI(difficulty, tier, boss) {
+    const base = AI_LEVELS[difficulty];
+    const step = Math.max(0, tier - 1);
+    const scale = 1 - 0.06 * step - (boss ? 0.1 : 0);
+    return {
+      ...base,
+      cooldown: base.cooldown.map((v) => Math.round(v * scale)),
+      success: base.combo ? Math.min(0.95, base.success + 0.03 * step) : 0,
+      duckBreak: Math.min(0.6, base.duckBreak + 0.03 * step),
+      speed: base.speed + 0.03 * step,
+    };
+  }
+
+  function create({ ui, difficulty = 'normal', mode = { kind: 'quick' }, onExit, onLevelClear }) {
     const { drawText, textWidth, C, blip, settings } = ui;
-    const level = AI_LEVELS[difficulty];
+    const isBoss = mode.kind === 'boss';
+    const isLevel = mode.kind === 'level';
+    const tier = isLevel ? mode.level : isBoss ? 6 : 1;
+    const roundSeconds = isBoss ? BOSS_SECONDS : ROUND_SECONDS;
     let ctx = null;
     let uid = 0;
 
     // ---- Fighters ---------------------------------------------------------
     function makeFighter(id, side) {
       const ch = window.CHARACTERS.find((c) => c.id === id);
-      const isBot = id === 'bot';
+      const isBot = id === 'bot' || id === 'brute';
+      const aiCfg = tunedAI(difficulty, tier, id === 'brute');
       return {
         id,
         side,
-        name: isBot ? 'BOT' : ch.name,
+        isBot,
+        aiCfg,
+        name: id === 'brute' ? 'BOT BRUTE' : isBot ? 'BOT' : ch.name,
         team: isBot ? C.grey : ch.team,
         hasSpecial: !isBot,
-        walk: isBot ? 0.9 * level.speed : 1.45,
+        walk: id === 'brute' ? 0.75 * aiCfg.speed : isBot ? 0.9 * aiCfg.speed : 1.45,
+        // The Bot Brute hits harder and is a bit wider.
+        dmgMul: id === 'brute' ? 1.35 : 1,
+        wide: id === 'brute' ? 6 : 5,
         x: side === 0 ? 84 : 172,
         y: 0, vx: 0, vy: 0,
         facing: side === 0 ? 1 : -1,
@@ -90,8 +118,10 @@
     }
 
     const player = makeFighter('ninja', 0);
-    const bot = makeFighter('bot', 1);
-    const fighters = [player, bot];
+    let bot = makeFighter(isBoss ? 'brute' : 'bot', 1);
+    let fighters = [player, bot];
+    // Beaten bots stay on the field, asleep.
+    const sleepers = [];
     const other = (f) => (f === player ? bot : player);
 
     // ---- Animation player ---------------------------------------------------
@@ -179,7 +209,7 @@
     // ---- Boxes --------------------------------------------------------------
     function hurtbox(f) {
       const h = f.state === 'duck' || f.state === 'lowkick' ? 15 : 26;
-      return { x0: f.x - 5, x1: f.x + 5, y0: f.y, y1: f.y + h };
+      return { x0: f.x - f.wide, x1: f.x + f.wide, y0: f.y, y1: f.y + h };
     }
 
     function hitbox(f, [f0, f1], [h0, h1]) {
@@ -196,6 +226,7 @@
 
     // ---- Damage ---------------------------------------------------------------
     function applyDamage(t, dmg, a, fromSpecial = false) {
+      dmg = Math.round(dmg * (a.dmgMul || 1));
       t.hp = Math.max(0, t.hp - dmg);
       if (a.hasSpecial && !fromSpecial) a.meter = Math.min(100, a.meter + dmg * METER_DEAL);
       if (t.hasSpecial) t.meter = Math.min(100, t.meter + dmg * METER_TAKE);
@@ -273,7 +304,7 @@
       if (!c) { toIdle(f); return; }
       c.t++;
       if (c.phase === 'strike') {
-        if (c.n === 1) f.x += f.facing * 0.6;
+        if (c.n === 1) f.x += f.facing * 0.9;
         if (c.t >= animTotal(f)) resolveComboHit(f, o, c);
         return;
       }
@@ -305,7 +336,12 @@
 
     function resolveComboHit(f, o, c) {
       if (c.n === 1) {
-        if (!hittable(o) || !overlap(hitbox(f, [4, 19], [16, 25]), hurtbox(o))) {
+        if (!hittable(o) || !overlap(hitbox(f, [4, 22], [16, 25]), hurtbox(o))) {
+          // No bar unless the first punch lands; tell the player why.
+          if (f === player && hittable(o)) {
+            const why = o.state === 'duck' ? 'DUCKED!' : o.y > 8 ? 'JUMPED!' : 'TOO FAR';
+            popup(why, f.x, GROUND - f.y - 34, C.grey, 40);
+          }
           endCombo(f, o, false);
           return;
         }
@@ -669,6 +705,7 @@
 
     // ---- Computer opponent ----------------------------------------------------
     function think(b, p) {
+      const level = b.aiCfg;
       const i = blankInput();
       const ai = b.ai;
       const dist = Math.abs(p.x - b.x);
@@ -746,15 +783,22 @@
     }
 
     // ---- Round flow -----------------------------------------------------------
-    let phase = 'intro'; // intro, fight, ko, time, result
+    // Phases: enter (next bot walks in), intro, fight, ko, time, result.
+    let phase = 'intro';
     let phaseT = 0;
-    let timeLeft = ROUND_SECONDS * FPS;
+    let timeLeft = roundSeconds * FPS;
     let freeze = null;
     let paused = false;
     let winner = null;
     let menu = null; // { items: [...], selected }
     let frame = 0;
     let aiOn = true;
+    let enemyIndex = 0;
+    let round = 1;
+    const wins = { player: 0, bot: 0 };
+    let decisive = true; // does this KO end the match (so the bot turns back into a person)?
+    let firstIntro = true;
+    let barsSeen = 0;
 
     function setPhase(p) {
       phase = p;
@@ -765,13 +809,85 @@
       menu = { items, selected: 0 };
     }
 
-    function finishRound() {
+    function result(title, color, lines, items) {
       setPhase('result');
+      resultInfo = { title, color, lines };
+      openMenu(items);
+    }
+    let resultInfo = null;
+
+    function resetFighter(f, x, facing) {
+      Object.assign(f, {
+        x, y: 0, vx: 0, vy: 0, facing, state: 'idle', st: 0, combo: null, slam: null,
+        soft: false, juggle: false, stun: 0, invuln: 0, duckTime: 0, duckLock: 0, comboShowT: 0,
+      });
+      setAnim(f, 'idle', null, true);
+    }
+
+    // The round is over: decide what happens next for each mode.
+    function endOfRound() {
       const won = winner === player;
-      openMenu([
-        { label: won ? 'FIGHT AGAIN' : 'TRY AGAIN', action: () => onExit('again') },
-        { label: 'MENU', action: () => onExit('menu') },
-      ]);
+      if (mode.kind === 'quick') {
+        result(!winner ? 'DRAW' : won ? 'YOU WIN!' : 'YOU LOSE', won ? C.yellow : C.white,
+          won ? ['THE BOT TURNED BACK INTO A PERSON.', 'THEY ARE FAST ASLEEP.'] : !winner ? ['NOBODY WON THIS ONE.'] : ['THE BOT GOT YOU THIS TIME.'],
+          [{ label: won ? 'FIGHT AGAIN' : 'TRY AGAIN', action: () => onExit('again') }, { label: 'MENU', action: () => onExit('menu') }]);
+        return;
+      }
+      if (isLevel) {
+        if (!won) {
+          result('YOU LOSE', C.white, [`THE BOTS STOPPED YOU ON LEVEL ${mode.level}.`, 'RESTART THE LEVEL TO TRY AGAIN.'],
+            [{ label: 'RESTART LEVEL', action: () => onExit('again') }, { label: 'MAP', action: () => onExit('map') }]);
+        } else if (enemyIndex < LEVEL_ENEMIES - 1) {
+          nextEnemy();
+        } else {
+          onLevelClear?.(mode.level);
+          const lines = mode.level < 5 ? ['ALL 3 BOTS ARE PEOPLE AGAIN.', 'YOUR HEALTH REFILLS FOR THE NEXT LEVEL.']
+            : ['ALL 3 BOTS ARE PEOPLE AGAIN.', 'NEXT UP: THE BOT BRUTE!'];
+          result(`LEVEL ${mode.level} CLEAR!`, C.yellow, lines,
+            [{ label: 'CONTINUE', action: () => onExit('next') }, { label: 'MAP', action: () => onExit('map') }]);
+        }
+        return;
+      }
+      // Boss: best of 3 rounds.
+      if (won) wins.player++; else if (winner) wins.bot++;
+      if (wins.player >= BOSS_ROUNDS_TO_WIN) {
+        onLevelClear?.(6);
+        result('BOSS BEATEN!', C.yellow, ['THE BOT BRUTE IS A PERSON AGAIN.', 'THE GRASSY FIELDS ARE CLEAR!'],
+          [{ label: 'CONTINUE', action: () => onExit('next') }, { label: 'MAP', action: () => onExit('map') }]);
+      } else if (wins.bot >= BOSS_ROUNDS_TO_WIN) {
+        result('YOU LOSE', C.white, ['THE BOT BRUTE WON 2 ROUNDS.', 'TRY THE BOSS AGAIN.'],
+          [{ label: 'TRY AGAIN', action: () => onExit('again') }, { label: 'MAP', action: () => onExit('map') }]);
+      } else {
+        nextRound();
+      }
+    }
+
+    // Main Mode: the next bot walks in. Your health carries over.
+    function nextEnemy() {
+      sleepers.push({ x: bot.x, facing: bot.facing, shirt: bot.shirt });
+      enemyIndex++;
+      const fromRight = player.x < W / 2;
+      bot = makeFighter('bot', 1);
+      bot.x = fromRight ? WALL_R : WALL_L;
+      bot.facing = fromRight ? -1 : 1;
+      fighters = [player, bot];
+      resetFighter(player, player.x, fromRight ? 1 : -1);
+      player.comboCount = 0;
+      timeLeft = roundSeconds * FPS;
+      winner = null;
+      decisive = true;
+      setPhase('enter');
+    }
+
+    // Boss: refill both health bars and start the next round.
+    function nextRound() {
+      round++;
+      for (const f of fighters) { f.hp = HP; f.trailHp = HP; }
+      resetFighter(player, 84, 1);
+      resetFighter(bot, 172, -1);
+      timeLeft = roundSeconds * FPS;
+      winner = null;
+      setPhase('intro');
     }
 
     function update() {
@@ -787,6 +903,7 @@
       for (let k = ghosts.length - 1; k >= 0; k--) if (ghosts[k].life <= 0) ghosts.splice(k, 1);
       if (shakeT > 0) shakeT--; else shakeMag = 0;
       for (const f of fighters) if (f.trailHp > f.hp) f.trailHp = Math.max(f.hp, f.trailHp - 4);
+      if (frame % 60 === 0) sleepers.forEach((z, k) => { if ((frame / 60 + k) % 2 === 0) popup('z', z.x + 6 * (z.facing === -1 ? -1 : 1), GROUND - 12, C.white, 70); });
 
       if (hitstop > 0) { hitstop--; pressed.clear(); return; }
 
@@ -794,6 +911,10 @@
       const live = phase === 'fight';
       player.input = live ? readPlayer() : blankInput();
       bot.input = live && aiOn ? think(bot, player) : blankInput();
+      if (phase === 'enter') {
+        // The next bot walks in from the edge of the field.
+        bot.input[player.x > bot.x ? 'right' : 'left'] = Math.abs(player.x - bot.x) > 60;
+      }
       pressed.clear();
 
       if (freeze) {
@@ -807,15 +928,18 @@
       pushApart();
       faceEachOther();
 
-      if (phase === 'intro' && phaseT > 100) setPhase('fight');
+      if (phase === 'enter' && (Math.abs(player.x - bot.x) <= 62 || phaseT > 150)) setPhase('intro');
+      if (phase === 'intro' && phaseT > (firstIntro ? 100 : 70)) { firstIntro = false; setPhase('fight'); }
       if (phase === 'fight') {
         timeLeft--;
         if (player.hp <= 0 || bot.hp <= 0) {
           winner = player.hp > 0 ? player : bot.hp > 0 ? bot : null;
+          decisive = !isBoss || (winner === player && wins.player + 1 >= BOSS_ROUNDS_TO_WIN);
           setPhase('ko');
           sound('ko');
         } else if (timeLeft <= 0) {
           winner = player.hp > bot.hp ? player : bot.hp > player.hp ? bot : null;
+          decisive = !isBoss || (winner === player && wins.player + 1 >= BOSS_ROUNDS_TO_WIN);
           setPhase('time');
         }
       }
@@ -829,13 +953,13 @@
           }
         }
         // A beaten bot slowly turns back into a person, asleep.
-        if (phaseT >= 80 && winner === player && bot.state === 'ko') setState(bot, 'convert');
-        if (phase === 'time' && phaseT === 80 && winner === player && bot.state !== 'ko') {
+        if (decisive && phaseT >= 80 && winner === player && bot.state === 'ko') setState(bot, 'convert');
+        if (decisive && phase === 'time' && phaseT === 80 && winner === player && bot.state !== 'ko') {
           setState(bot, 'convert');
           bot.pose = poseFor('down');
           bot.anim = null;
         }
-        if (phaseT === 180) finishRound();
+        if (phaseT === 180) endOfRound();
       }
     }
 
@@ -909,10 +1033,10 @@
       ctx.fillStyle = 'rgba(26, 28, 44, 0.35)';
       ctx.fillRect(Math.round(f.x - sw / 2), GROUND - 1, Math.round(sw), 2);
       const flip = f.facing === -1;
-      if (f.id === 'bot' && (f.state === 'convert' || f.state === 'sleep')) {
+      if (f.isBot && (f.state === 'convert' || f.state === 'sleep')) {
         const t = f.state === 'sleep' ? 1 : Math.min(1, f.st / 90);
         const lying = { ...poseFor('down'), face: 'sleep' };
-        if (t < 1) drawPose(ctx, 'bot', poseFor('down'), sx, sy, { flip, alpha: 1 - t });
+        if (t < 1) drawPose(ctx, f.id, poseFor('down'), sx, sy, { flip, alpha: 1 - t });
         drawPose(ctx, `person-${f.shirt}`, lying, sx, sy, { flip, alpha: t });
         return;
       }
@@ -920,10 +1044,12 @@
       drawPose(ctx, f.id, f.pose, sx, sy, { flip, alpha: blink ? 0.5 : 1 });
     }
 
-    function drawBar(f, bar) {
+    function drawBar(f, bar, label) {
       const bw = 42;
       const bx = clamp(Math.round(f.x - bw / 2), 2, W - bw - 2);
-      const by = Math.max(14, Math.round(GROUND - f.y - 42));
+      const by = Math.max(24, Math.round(GROUND - f.y - 42));
+      if (bar.t === 1 && bar.counted !== true) { bar.counted = true; barsSeen++; }
+      if (label) textC(label, bx + bw / 2, by - 10, C.white);
       ctx.fillStyle = C.night;
       ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
       ctx.fillStyle = C.red; ctx.fillRect(bx, by, bw, 5);
@@ -947,9 +1073,19 @@
       ctx.fillStyle = C.night;
       ctx.fillRect(0, 0, W, 12);
       drawText(player.name, 5, 4, C.night); drawText(player.name, 4, 3, player.team);
-      const bn = `${bot.name} ${difficulty.toUpperCase()}`;
+      const bn = mode.kind === 'quick' ? `${bot.name} ${difficulty.toUpperCase()}` : bot.name;
       drawText(bn, W - 4 - textWidth(bn) + 1, 4, C.night); drawText(bn, W - 4 - textWidth(bn), 3, C.white);
-      textC('GRASSY FIELDS', W / 2, 3, C.white);
+      const where = isLevel ? `LEVEL ${mode.level}  ENEMY ${enemyIndex + 1}/${LEVEL_ENEMIES}` : isBoss ? `BOSS  ROUND ${round}` : 'GRASSY FIELDS';
+      textC(where, W / 2, 3, C.yellow);
+      if (isBoss) {
+        // Round wins: one pip per round won.
+        for (let k = 0; k < BOSS_ROUNDS_TO_WIN; k++) {
+          ctx.fillStyle = k < wins.player ? C.yellow : C.dark;
+          ctx.fillRect(4 + textWidth(player.name) + 4 + k * 6, 4, 4, 4);
+          ctx.fillStyle = k < wins.bot ? C.yellow : C.dark;
+          ctx.fillRect(W - 4 - textWidth(bn) - 8 - k * 6, 4, 4, 4);
+        }
+      }
 
       // Bottom panel: health, special meter and timer.
       ctx.fillStyle = C.night;
@@ -1030,6 +1166,7 @@
       ctx.drawImage(stage, 0, 0);
       drawClouds();
 
+      for (const z of sleepers) drawPose(ctx, `person-${z.shirt}`, { ...poseFor('down'), face: 'sleep' }, z.x, GROUND, { flip: z.facing === -1 });
       for (const g of ghosts) drawPose(ctx, 'ninja', g.pose, g.x, GROUND - g.y, { flip: g.facing === -1, alpha: g.life / 24 });
       const order = fighters.slice().sort((a, b) => (['combo', 'strong', 'lowkick', 'slam', 'special'].includes(a.state) ? 1 : 0)
         - (['combo', 'strong', 'lowkick', 'slam', 'special'].includes(b.state) ? 1 : 0));
@@ -1040,8 +1177,9 @@
         ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
       }
       for (const f of fighters) {
-        if (f.combo?.phase === 'bar') drawBar(f, f.combo);
-        if (f.slam) drawBar(f, f.slam);
+        // Only your own timing bar shows; the bot's combo shows as its hit counter.
+        if (f === player && f.combo?.phase === 'bar') drawBar(f, f.combo, barsSeen < 6 ? 'SPACE ON YELLOW' : null);
+        if (f === player && f.slam) drawBar(f, f.slam, 'SLAM! SPACE');
         // Duck stamina, only while ducking.
         if (f.state === 'duck' && f.duckTime > 30) {
           const left = 1 - f.duckTime / DUCK_MAX;
@@ -1057,20 +1195,26 @@
 
       drawHud();
 
-      if (phase === 'intro') {
-        ctx.fillStyle = 'rgba(26, 28, 44, 0.7)';
-        ctx.fillRect(20, 36, W - 40, 66);
-        textC(phaseT < 60 ? 'READY?' : 'FIGHT!', W / 2, 44, phaseT < 60 ? C.white : C.yellow, 3, C.red);
-        CONTROL_LINES.forEach((l, k) => textC(l, W / 2, 72 + k * 9, C.white));
+      if (phase === 'enter') {
+        textC(`ENEMY ${enemyIndex + 1} / ${LEVEL_ENEMIES}`, W / 2, 44, C.white, 2, C.red);
+      } else if (phase === 'intro') {
+        let top;
+        if (isBoss) top = round === 1 ? 'BOSS: BOT BRUTE' : `ROUND ${round}`;
+        else if (isLevel) top = `LEVEL ${mode.level}  ENEMY ${enemyIndex + 1}/${LEVEL_ENEMIES}`;
+        if (firstIntro) {
+          ctx.fillStyle = 'rgba(26, 28, 44, 0.7)';
+          ctx.fillRect(20, 26, W - 40, 80);
+          CONTROL_LINES.forEach((l, k) => textC(l, W / 2, 76 + k * 9, C.white));
+        }
+        if (top) textC(top, W / 2, 32, C.yellow);
+        const big = phaseT < (firstIntro ? 60 : 40);
+        textC(big ? 'READY?' : 'FIGHT!', W / 2, 46, big ? C.white : C.yellow, 3, C.red);
       } else if (phase === 'ko' && phaseT < 120) {
         textC('K.O.!', W / 2, 44, C.yellow, 3, C.red);
       } else if (phase === 'time' && phaseT < 120) {
         textC('TIME!', W / 2, 44, C.yellow, 3, C.red);
-      } else if (phase === 'result') {
-        const won = winner === player;
-        const title = !winner ? 'DRAW' : won ? 'YOU WIN!' : 'YOU LOSE';
-        const lines = won ? ['THE BOT TURNED BACK INTO A PERSON.', 'THEY ARE FAST ASLEEP.'] : !winner ? ['NOBODY WON THIS ONE.'] : ['THE BOT GOT YOU THIS TIME.'];
-        drawMenu(title, won ? C.yellow : C.white, lines);
+      } else if (phase === 'result' && resultInfo) {
+        drawMenu(resultInfo.title, resultInfo.color, resultInfo.lines);
       }
       if (paused) drawMenu('PAUSED', C.white, CONTROL_LINES);
     }
@@ -1133,6 +1277,10 @@
       skipIntro() { setPhase('fight'); },
       setTime(s) { timeLeft = s * FPS; },
       setAI(on) { aiOn = on; },
+      get enemyIndex() { return enemyIndex; },
+      get round() { return round; },
+      get wins() { return wins; },
+      get sleepers() { return sleepers; },
     };
 
     return { update, draw, keydown, keyup, pointer, debug };
