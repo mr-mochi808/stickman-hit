@@ -12,7 +12,9 @@ Build order for the game described in `game-design.md`. Each step ends with some
 - All five fighters, plus the gray bot and the sleeping person a bot turns back into, are drawn at 28×28. The fight blends smoothly between poses. ROBOT is renamed CYBORG and the Boxer's special is now Haymaker (in the data; only the Ninja is playable so far).
 - Code: `characters.js` (sprites, poses, animations), `fight.js` (the fight, HUD, computer opponent), `title.js` (menus; Play now opens the difficulty screen).
 - Extras pulled in early: a beaten bot collapses and fades into a sleeping person (from Step 5), and there's a pause menu (Esc or P).
-- Not wired up yet: the character select screen still exists for Quick Fight (Step 9) but Play no longer opens it, and the "type GLITCH" unlock still works there.
+- Step 9 is built early: Quick Fight has a setup screen (vs computer or 2 players, stage, difficulty, timer 60s / 2 min / no limit), a character select (player 1, then player 2 or the computer's fighter; the computer can also be a Bot or, once beaten, the Bot Brute), a versus screen, and 2-player keys (P1: WASD + F/G/H, P2: arrows + , . /). Only the Grassy Fields stage exists so far.
+- Locked fighters stay locked until they're beaten in Main Mode (Steps 6-8). Glitch can still be unlocked by typing GLITCH on the select screen until Glitch Mode exists (Step 11). His Teleport special is built so he's playable; the Boxer, Samurai and Cyborg specials come with their bosses.
+- Fighters' walking speed now comes from their Speed stat.
 - Tuning numbers live at the top of `fight.js` (damage, timing-bar zones and speed, duck limit, meter fill, computer opponent settings per difficulty).
 
 ## Step 1: First real fight (built)
@@ -71,7 +73,7 @@ The goal is the Ninja fighting one bot on the Grassy Fields.
 - Ending: everyone wakes up, then the **Glitch teaser** glitches the screen.
 - Cyborg unlocks.
 
-## Step 9: Quick Fight and 2 players
+## Step 9: Quick Fight and 2 players (built, except more stages)
 
 - Pick a fighter, stage, difficulty, and timer (60s / 2 min / ∞).
 - **2-player mode** on one keyboard (P1: WASD + F/G/H, P2: arrows + , . /).

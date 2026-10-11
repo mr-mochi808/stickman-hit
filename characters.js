@@ -596,6 +596,10 @@
 
   // The Ninja fights with fast kicks, like Fang from Brawl Stars.
   const ANIM_OVERRIDES = {
+    // Glitch: break apart, reappear behind the enemy, strike.
+    glitch: {
+      special: { keys: [K('duck', 4), K('idle1', 8, { teleport: true, face: 'angry' }), K('idle1', 4, { teleport: true, face: 'angry' }), K('heavyWind', 6), K('heavy', 4), K('heavy', 8), K('idle1', 6)] },
+    },
     ninja: {
       strong: { keys: [K('chamber', 8), K('sideKick', 4), K('sideKick', 10), K('idle1', 8)] },
       combo: [
@@ -704,6 +708,7 @@
     },
     {
       id: 'boxer',
+      locked: true,
       name: 'BOXER',
       team: '#b13e53',
       tagline: 'The Dojo boss',
@@ -717,6 +722,7 @@
     },
     {
       id: 'samurai',
+      locked: true,
       name: 'SAMURAI',
       team: '#ffcd75',
       tagline: 'The Temple boss',
@@ -730,6 +736,7 @@
     },
     {
       id: 'cyborg',
+      locked: true,
       name: 'CYBORG',
       team: '#38b764',
       tagline: 'The supervillain',
@@ -794,5 +801,9 @@
   window.POSE_ORDER = POSE_ORDER;
   window.CHARACTERS = CHARACTERS;
   window.drawSprite = drawSprite;
-  window.Rig = { POSES, SHIRTS, anim, poseFor, lerpPose, ease, drawPose };
+  // Menu sprites for the computer-only fighters, used on the select screen.
+  const BOT_SPRITES = Object.fromEntries(['bot', 'brute'].map((id) => [id,
+    Object.fromEntries(POSE_ORDER.map((n) => [n, renderGrid(id, n === 'attack' ? poseFor('heavy') : poseFor(MENU_POSES[n])).map((row) => row.join(''))]))]));
+
+  window.Rig = { POSES, SHIRTS, BOT_SPRITES, anim, poseFor, lerpPose, ease, drawPose };
 })();

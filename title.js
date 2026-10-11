@@ -261,15 +261,14 @@
 
   const screens = {
     title: [
-      { label: 'PLAY', icon: PLAY_ICON, y: 58, action: () => { difficultyFor = 'main'; go('difficulty'); } },
+      { label: 'PLAY', icon: PLAY_ICON, y: 58, action: () => go('difficulty') },
       { label: 'QUICK FIGHT', icon: BOLT_ICON, y: 77, quick: true, action: () => {
         if (progress.cleared < 1) {
           blip(160);
           toast = { text: 'BEAT LEVEL 1 TO UNLOCK QUICK FIGHT', until: frame + 120 };
           return;
         }
-        difficultyFor = 'quick';
-        go('difficulty');
+        go('quick');
       } },
       { label: 'SETTINGS', icon: GEAR, y: 96, action: () => go('settings') },
     ],
@@ -288,25 +287,40 @@
     // Main Mode map: 5 levels and the boss, filled in below.
     map: [],
     fight: [],
-    // Character select (for Quick Fight later): portrait boxes plus a back button, filled in below.
+    // Quick Fight setup (from docs/game-design.md): mode, stage, difficulty and timer.
+    quick: [
+      { opt: 'mode', label: 'MODE', values: ['VS COMPUTER', '2 PLAYERS'], x: 40, w: 176, y: 26 },
+      { opt: 'stage', label: 'STAGE', values: ['GRASSY FIELDS'], x: 40, w: 176, y: 45 },
+      { opt: 'difficulty', label: 'DIFFICULTY', values: ['EASY', 'NORMAL', 'HARD'], x: 40, w: 176, y: 64 },
+      { opt: 'timer', label: 'TIMER', values: ['60 SEC', '2 MIN', 'NO LIMIT'], x: 40, w: 176, y: 83 },
+      { label: 'PICK FIGHTERS', y: 106, action: () => openSelect() },
+      { label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: () => go('title') },
+    ],
+    // Character select: portrait boxes plus a back button, rebuilt for each pick.
     select: [],
     versus: [
-      { label: 'BACK', y: H - TILE - 2, action: () => go('title') },
+      { label: 'FIGHT!', y: 120, action: () => startQuickFight() },
+      { label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: () => { picks.pop(); buildSelect(); screen = 'select'; selected = 0; } },
     ],
   };
 
   // ---- Character select -------------------------------------------------
   const FIGHTERS = window.CHARACTERS;
-  const PORTRAIT = 32;
-  const PORTRAIT_GAP = 6;
-  const PORTRAIT_Y = 36;
-  const PORTRAIT_X = (W - (FIGHTERS.length * PORTRAIT + (FIGHTERS.length - 1) * PORTRAIT_GAP)) / 2;
+  // Computer-only opponents for Quick Fight.
+  const BOTS = [
+    { id: 'bot', name: 'BOT', team: C.grey, tagline: 'A gray bot made by Cyborg', cpuOnly: true, sprites: window.Rig.BOT_SPRITES.bot },
+    { id: 'brute', name: 'BOT BRUTE', team: C.grey, tagline: 'The Grassy Fields boss', cpuOnly: true, sprites: window.Rig.BOT_SPRITES.brute },
+  ];
   const PLAYER_COLORS = [C.red, C.sky];
+  const quickOpts = { mode: 0, stage: 0, difficulty: 1, timer: 0 };
+  const TIMER_SECONDS = [60, 120, 0];
+  const DIFFICULTIES = ['easy', 'normal', 'hard'];
+  const twoPlayers = () => quickOpts.mode === 1;
 
-  // picks[0] is player 1's fighter index, picks[1] is player 2's.
+  // picks[0] is player 1's fighter, picks[1] is player 2's (or the computer's).
   let picks = [];
 
-  // Locked fighters stay locked until unlocked (for now: a secret code typed on the select screen).
+  // Fighters unlock by beating them in Main Mode (Glitch: the secret code, until Glitch Mode exists).
   const UNLOCK_CODE = 'GLITCH';
   let typed = '';
   let unlocked = [];
@@ -315,7 +329,8 @@
   } catch (e) { /* storage unavailable */ }
 
   function isLocked(f) {
-    return f.locked && !unlocked.includes(f.id);
+    if (f.id === 'brute') return progress.cleared < 6;
+    return !!f.locked && !unlocked.includes(f.id);
   }
 
   function unlock(f) {
@@ -329,32 +344,70 @@
 
   let flash = null;
 
-  FIGHTERS.forEach((f, i) => {
-    screens.select.push({
-      portrait: i,
-      x: PORTRAIT_X + i * (PORTRAIT + PORTRAIT_GAP),
-      y: PORTRAIT_Y,
-      w: PORTRAIT,
-      h: PORTRAIT,
+  // Who can be picked right now: fighters for players, fighters plus bots for the computer.
+  function pickList() {
+    return picks.length === 1 && !twoPlayers() ? [...BOTS, ...FIGHTERS] : FIGHTERS;
+  }
+
+  function buildSelect() {
+    const list = pickList();
+    const size = list.length > 5 ? 28 : 32;
+    const gap = list.length > 5 ? 4 : 6;
+    const x0 = (W - (list.length * size + (list.length - 1) * gap)) / 2;
+    screens.select = list.map((f, i) => ({
+      portrait: f,
+      x: x0 + i * (size + gap),
+      y: 36,
+      w: size,
+      h: size,
       action: () => {
         if (isLocked(f)) {
           blip(160);
-          flash = { text: 'LOCKED', until: frame + 45 };
+          flash = { text: f.id === 'brute' ? 'BEAT THE BOT BRUTE TO UNLOCK' : 'BEAT HIM IN MAIN MODE TO UNLOCK', until: frame + 70 };
           return;
         }
-        picks.push(i);
-        if (picks.length === 2) go('versus');
+        picks.push(f);
+        if (picks.length === 2) { screen = 'versus'; selected = 0; } else { buildSelect(); selected = 0; }
       },
-    });
-  });
-  screens.select.push({ label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: backFromSelect });
+    }));
+    screens.select.push({ label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: backFromSelect });
+  }
+
+  function openSelect() {
+    picks = [];
+    buildSelect();
+    screen = 'select';
+    selected = 0;
+  }
 
   function backFromSelect() {
     if (picks.length) {
-      selected = picks.pop();
+      const f = picks.pop();
+      buildSelect();
+      selected = Math.max(0, screens.select.findIndex((b) => b.portrait === f));
     } else {
-      go('title');
+      go('quick');
     }
+  }
+
+  function startQuickFight() {
+    startFight(DIFFICULTIES[quickOpts.difficulty], {
+      kind: 'quick',
+      p1: picks[0].id,
+      p2: picks[1].id,
+      twoPlayer: twoPlayers(),
+      timer: TIMER_SECONDS[quickOpts.timer],
+    });
+  }
+
+  function optLabel(btn) {
+    if (btn.opt === 'difficulty' && twoPlayers()) return 'DIFFICULTY: --';
+    return `${btn.label}: ${btn.values[quickOpts[btn.opt]]}`;
+  }
+
+  function cycleOpt(btn, dir) {
+    quickOpts[btn.opt] = (quickOpts[btn.opt] + dir + btn.values.length) % btn.values.length;
+    blip(dir > 0 ? 660 : 520);
   }
 
   let screen = 'title';
@@ -363,7 +416,6 @@
   let toast = null;
 
   function go(next) {
-    if (next === 'select') picks = [];
     toast = null;
     if (next !== 'fight') { fight = null; window.stickFight = null; }
     screen = next;
@@ -376,7 +428,6 @@
   const NODE_GAP = 12;
   const NODE_Y = 62;
   const NODE_X = (W - (MAP_NODES * NODE + (MAP_NODES - 1) * NODE_GAP)) / 2;
-  let difficultyFor = 'main';
   let mainDifficulty = 'normal';
 
   for (let k = 0; k < MAP_NODES; k++) {
@@ -403,12 +454,8 @@
   }
 
   function pickDifficulty(d) {
-    if (difficultyFor === 'quick') {
-      startFight(d, { kind: 'quick' });
-    } else {
-      mainDifficulty = d;
-      go('map');
-    }
+    mainDifficulty = d;
+    go('map');
   }
 
   // ---- The fight ---------------------------------------------------------
@@ -429,6 +476,10 @@
       onExit: (action) => {
         if (action === 'again') {
           startFight(difficulty, mode);
+        } else if (action === 'select') {
+          fight = null;
+          window.stickFight = null;
+          openSelect();
         } else if (action === 'next' || action === 'map') {
           go('map');
           if (action === 'next') selected = Math.min(progress.cleared, MAP_NODES - 1);
@@ -501,7 +552,9 @@
   function activate(i) {
     const btn = screens[screen][i];
     if (!btn) return;
-    if (btn.key) {
+    if (btn.opt) {
+      cycleOpt(btn, 1);
+    } else if (btn.key) {
       settings[btn.key] = !settings[btn.key];
       saveSettings();
       blip(settings[btn.key] ? 880 : 440);
@@ -512,6 +565,7 @@
   }
 
   function buttonLabel(btn) {
+    if (btn.opt) return optLabel(btn);
     return btn.key ? `${btn.label}: ${settings[btn.key] ? 'ON' : 'OFF'}` : btn.label;
   }
 
@@ -522,6 +576,7 @@
     const x = btn.x;
     const y = btn.y + lift;
     const takenBy = picks.indexOf(btn.portrait);
+    const pad = (btn.w - 28) / 2;
 
     ctx.fillStyle = C.night;
     ctx.fillRect(x - 2, y - 2, btn.w + 4, btn.h + 4);
@@ -533,28 +588,30 @@
     ctx.fillRect(x, y, btn.w, btn.h);
     ctx.fillStyle = C.cyan;
     ctx.fillRect(x, y, btn.w, 2);
-    const f = FIGHTERS[btn.portrait];
+    const f = btn.portrait;
     if (isLocked(f)) {
       // Dark silhouette with a padlock.
       ctx.fillStyle = C.dark;
       ctx.fillRect(x, y, btn.w, btn.h);
       const sprite = f.sprites.idle.map((row) => row.replace(/[^.]/g, 'k'));
-      window.drawSprite(ctx, sprite, x + 2, y + 3);
+      window.drawSprite(ctx, sprite, x + pad, y + pad + 1);
+      const lx = x + btn.w / 2 - 4;
+      const ly = y + btn.h / 2 - 2;
       ctx.fillStyle = C.yellow;
-      ctx.fillRect(x + 12, y + 16, 8, 6);
-      ctx.fillRect(x + 13, y + 12, 1, 4);
-      ctx.fillRect(x + 18, y + 12, 1, 4);
-      ctx.fillRect(x + 13, y + 12, 6, 1);
+      ctx.fillRect(lx, ly + 4, 8, 6);
+      ctx.fillRect(lx + 1, ly, 1, 4);
+      ctx.fillRect(lx + 6, ly, 1, 4);
+      ctx.fillRect(lx + 1, ly, 6, 1);
       ctx.fillStyle = C.night;
-      ctx.fillRect(x + 15, y + 18, 2, 2);
+      ctx.fillRect(lx + 3, ly + 6, 2, 2);
       return;
     }
-    window.drawSprite(ctx, f.sprites[hot ? 'victory' : 'idle'], x + 2, y + 3);
+    window.drawSprite(ctx, f.sprites[hot ? 'victory' : 'idle'], x + pad, y + pad + 1, 1, picks.length === 1);
     // Team color stripe along the bottom.
     ctx.fillStyle = f.team;
     ctx.fillRect(x, y + btn.h - 2, btn.w, 2);
 
-    if (takenBy >= 0) drawText(`P${takenBy + 1}`, x + 1, y + 1, PLAYER_COLORS[takenBy]);
+    if (takenBy >= 0) drawText('P1', x + 1, y + 1, PLAYER_COLORS[0]);
   }
 
   function drawSmallButton(btn, i) {
@@ -574,29 +631,32 @@
     const hot = i === selected;
     const down = i === pressed;
     const y = btn.y + (down ? 1 : 0);
+    const bx = btn.x ?? BTN_X;
+    const bw = btn.w ?? BTN_W;
 
     // Drop shadow, border, face, top highlight.
     ctx.fillStyle = C.night;
-    if (!down) ctx.fillRect(BTN_X + 1, btn.y + BTN_H, BTN_W, 2);
-    ctx.fillRect(BTN_X - 1, y - 1, BTN_W + 2, BTN_H + 2);
+    if (!down) ctx.fillRect(bx + 1, btn.y + BTN_H, bw, 2);
+    ctx.fillRect(bx - 1, y - 1, bw + 2, BTN_H + 2);
     ctx.fillStyle = hot ? C.orange : C.blue;
-    ctx.fillRect(BTN_X, y, BTN_W, BTN_H);
+    ctx.fillRect(bx, y, bw, BTN_H);
     ctx.fillStyle = hot ? C.yellow : C.sky;
-    ctx.fillRect(BTN_X, y, BTN_W, 2);
+    ctx.fillRect(bx, y, bw, 2);
     ctx.fillStyle = hot ? C.red : C.navy;
-    ctx.fillRect(BTN_X, y + BTN_H - 2, BTN_W, 2);
+    ctx.fillRect(bx, y + BTN_H - 2, bw, 2);
 
     const locked = btn.quick && progress.cleared < 1;
-    if (btn.icon) drawIcon(locked ? LOCK_ICON : btn.icon, BTN_X, y);
+    if (btn.icon) drawIcon(locked ? LOCK_ICON : btn.icon, bx, y);
 
     const label = buttonLabel(btn);
-    const tx = Math.round(BTN_X + (BTN_W - textWidth(label)) / 2 + (btn.icon ? 6 : 0));
+    const tx = Math.round(bx + (bw - textWidth(label)) / 2 + (btn.icon ? 6 : 0));
     drawText(label, tx + 1, y + 5, C.night);
     drawText(label, tx, y + 4, C.white);
 
     if (hot && Math.floor(frame / 20) % 2 === 0) {
-      drawText('>', BTN_X - 10, y + 4, C.yellow);
-      drawText('<', BTN_X + BTN_W + 5, y + 4, C.yellow);
+      // Options show arrows you can press left and right.
+      drawText(btn.opt ? '<' : '>', bx - 10, y + 4, C.yellow);
+      drawText(btn.opt ? '>' : '<', bx + bw + 5, y + 4, C.yellow);
     }
   }
 
@@ -710,20 +770,23 @@
 
   function drawSelect() {
     const picker = picks.length;
-    drawTextCentered('PICK YOUR FIGHTER', 6, C.yellow, 1, C.night);
-    drawTextCentered(`PLAYER ${picker + 1}`, 18, PLAYER_COLORS[picker], 1, C.night);
+    const who = picker === 0 ? 'PLAYER 1' : twoPlayers() ? 'PLAYER 2' : 'COMPUTER';
+    drawTextCentered(picker === 1 && !twoPlayers() ? 'PICK YOUR OPPONENT' : 'PICK YOUR FIGHTER', 6, C.yellow, 1, C.night);
+    drawTextCentered(who, 18, PLAYER_COLORS[picker], 1, C.night);
 
     const hover = screens.select[selected];
-    const hovered = hover && hover.portrait != null ? FIGHTERS[hover.portrait] : null;
-    const shown = hovered && !isLocked(hovered) ? hovered : FIGHTERS[picks[0] ?? 0];
+    const hovered = hover && hover.portrait ? hover.portrait : null;
+    const shown = hovered && !isLocked(hovered) ? hovered : picks[0] || FIGHTERS[0];
     if (hovered && isLocked(hovered)) {
-      drawTextCentered('???', 68, C.grey, 2, C.night);
-      drawTextCentered('LOCKED FIGHTER', 84, C.white, 1, C.night);
-      drawTextCentered('UNLOCK HIM TO PLAY', 100, C.grey, 1, C.night);
+      drawTextCentered('???', 72, C.grey, 2, C.night);
+      drawTextCentered('LOCKED', 88, C.white, 1, C.night);
+      const how = hovered.id === 'brute' ? 'BEAT THE BOT BRUTE IN MAIN MODE' : hovered.unlock ? hovered.unlock.toUpperCase() : '';
+      drawTextCentered(how, 100, C.grey, 1, C.night);
     } else {
-      drawTextCentered(shown.name, 68, shown.team, 2, C.night);
-      drawTextCentered(shown.tagline.toUpperCase(), 84, C.white, 1, C.night);
-      drawStatBars(shown, 94);
+      drawTextCentered(shown.name, 72, shown.team, 2, C.night);
+      drawTextCentered(shown.tagline.toUpperCase(), 88, C.white, 1, C.night);
+      if (shown.stats) drawStatBars(shown, 98);
+      else drawTextCentered('COMPUTER ONLY', 100, C.grey, 1, C.night);
     }
     if (flash && frame < flash.until) {
       ctx.fillStyle = C.night;
@@ -733,33 +796,37 @@
 
     // Big previews: player 1 on the left, player 2 on the right.
     const walk = Math.floor(frame / 12) % 2 ? 'walk1' : 'walk2';
-    const p1 = picks[0] != null ? FIGHTERS[picks[0]] : shown;
-    window.drawSprite(ctx, p1.sprites[picks[0] != null ? 'victory' : walk], 4, 52, 2);
-    if (picker === 1) window.drawSprite(ctx, shown.sprites[walk], W - 60, 52, 2, true);
+    const p1 = picks[0] || shown;
+    window.drawSprite(ctx, p1.sprites[picks[0] ? 'victory' : walk], 4, 68, 2);
+    if (picker === 1) window.drawSprite(ctx, shown.sprites[walk], W - 60, 68, 2, true);
 
     drawText('ENTER: PICK  ESC: BACK', W - textWidth('ENTER: PICK  ESC: BACK') - 4, H - 13, C.grey);
   }
 
   function drawVersus() {
-    const a = FIGHTERS[picks[0]];
-    const b = FIGHTERS[picks[1]];
+    const [a, b] = picks;
     drawText(a.name, 8, 10, C.night, 2);
     drawText(a.name, 7, 9, PLAYER_COLORS[0], 2);
     const bx = W - 8 - textWidth(b.name, 2);
     drawText(b.name, bx + 1, 10, C.night, 2);
     drawText(b.name, bx, 9, PLAYER_COLORS[1], 2);
     drawTextCentered('VS', 30, C.yellow, 2, C.red);
-    drawTextCentered('GAME COMING SOON', 50, C.white, 1, C.night);
+    const timer = ['60 SEC', '2 MIN', 'NO LIMIT'][quickOpts.timer];
+    const info = twoPlayers() ? `2 PLAYERS  ${timer}` : `VS COMPUTER  ${DIFFICULTIES[quickOpts.difficulty].toUpperCase()}  ${timer}`;
+    drawTextCentered(info, 50, C.white, 1, C.night);
     drawPair(a, b, 76, 0, 2);
   }
 
   function render() {
-    drawBackground(screen !== 'select' && screen !== 'map');
+    drawBackground(!['select', 'map', 'quick'].includes(screen));
     if (screen === 'title') {
       drawTitle();
       drawFighters();
     } else if (screen === 'settings') {
       drawTextCentered('SETTINGS', TILE + 2, C.yellow, 2, C.night);
+    } else if (screen === 'quick') {
+      drawTextCentered('QUICK FIGHT', 6, C.yellow, 2, C.night);
+      drawText('LEFT / RIGHT CHANGES AN OPTION', W - textWidth('LEFT / RIGHT CHANGES AN OPTION') - 4, H - 13, C.grey);
     } else if (screen === 'select') {
       drawSelect();
     } else if (screen === 'versus') {
@@ -769,7 +836,7 @@
       if (toast && frame < toast.until) drawTextCentered(toast.text, 34, C.yellow, 1, C.night);
     } else if (screen === 'difficulty') {
       drawTextCentered('CHOOSE DIFFICULTY', 10, C.yellow, 1, C.night);
-      drawTextCentered(difficultyFor === 'quick' ? 'QUICK FIGHT: NINJA VS ONE BOT' : 'MAIN MODE: THE GRASSY FIELDS', 22, C.white, 1, C.night);
+      drawTextCentered('MAIN MODE: THE GRASSY FIELDS', 22, C.white, 1, C.night);
     }
     screens[screen].forEach(drawButton);
   }
@@ -857,6 +924,11 @@
       if (typed === UNLOCK_CODE && isLocked(secret)) unlock(secret);
     }
     const count = screens[screen].length;
+    const cur = screens[screen][selected];
+    if (cur?.opt && (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'ArrowRight' || e.key === 'd')) {
+      cycleOpt(cur, e.key === 'ArrowLeft' || e.key === 'a' ? -1 : 1);
+      return;
+    }
     if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'ArrowRight' || e.key === 'd') {
       selected = (selected + 1) % count;
       blip(520);
@@ -869,6 +941,7 @@
     } else if (e.key === 'Escape' && screen !== 'title') {
       blip(440);
       if (screen === 'select') backFromSelect();
+      else if (screen === 'versus') screens.versus[1].action();
       else go('title');
     }
   });

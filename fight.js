@@ -42,6 +42,16 @@
   };
 
   // Both 1-player layouts work at the same time.
+  // 2 players on one keyboard (from docs/game-design.md).
+  const KEYMAP_2P = {
+    a: [0, 'left'], d: [0, 'right'], w: [0, 'up'], s: [0, 'down'], f: [0, 'combo'], g: [0, 'strong'], h: [0, 'special'],
+    arrowleft: [1, 'left'], arrowright: [1, 'right'], arrowup: [1, 'up'], arrowdown: [1, 'down'],
+    ',': [1, 'combo'], '.': [1, 'strong'], '/': [1, 'special'],
+  };
+
+  // Specials that are built so far. The others arrive with their bosses.
+  const SPECIALS = { ninja: 'DASH KICK!', glitch: 'TELEPORT!' };
+
   const KEYMAP = {
     a: 'left', arrowleft: 'left',
     d: 'right', arrowright: 'right',
@@ -79,8 +89,13 @@
     const { drawText, textWidth, C, blip, settings } = ui;
     const isBoss = mode.kind === 'boss';
     const isLevel = mode.kind === 'level';
+    const isQuick = mode.kind === 'quick';
+    const twoPlayer = isQuick && !!mode.twoPlayer;
     const tier = isLevel ? mode.level : isBoss ? 6 : 1;
-    const roundSeconds = isBoss ? BOSS_SECONDS : ROUND_SECONDS;
+    // Quick Fight timer: 60, 120 or 0 for no limit.
+    const roundSeconds = isBoss ? BOSS_SECONDS : isQuick && mode.timer != null ? mode.timer : ROUND_SECONDS;
+    const noLimit = roundSeconds === 0;
+    const fullTime = () => (noLimit ? Infinity : roundSeconds * FPS);
     let ctx = null;
     let uid = 0;
 
@@ -96,8 +111,10 @@
         aiCfg,
         name: id === 'brute' ? 'BOT BRUTE' : isBot ? 'BOT' : ch.name,
         team: isBot ? C.grey : ch.team,
-        hasSpecial: !isBot,
-        walk: id === 'brute' ? 0.75 * aiCfg.speed : isBot ? 0.9 * aiCfg.speed : 1.45,
+        hasSpecial: !!SPECIALS[id],
+        human: side === 0 || twoPlayer,
+        // Fighters walk at a speed set by their Speed stat.
+        walk: id === 'brute' ? 0.75 * aiCfg.speed : isBot ? 0.9 * aiCfg.speed : (0.9 + 0.12 * ch.stats.speed) * (side === 1 && !twoPlayer ? aiCfg.speed : 1),
         // The Bot Brute hits harder and is a bit wider.
         dmgMul: id === 'brute' ? 1.35 : 1,
         wide: id === 'brute' ? 6 : 5,
@@ -117,8 +134,8 @@
       };
     }
 
-    const player = makeFighter('ninja', 0);
-    let bot = makeFighter(isBoss ? 'brute' : 'bot', 1);
+    const player = makeFighter(isQuick && mode.p1 ? mode.p1 : 'ninja', 0);
+    let bot = makeFighter(isBoss ? 'brute' : isQuick && mode.p2 ? mode.p2 : 'bot', 1);
     let fighters = [player, bot];
     // Beaten bots stay on the field, asleep.
     const sleepers = [];
@@ -338,7 +355,7 @@
       if (c.n === 1) {
         if (!hittable(o) || !overlap(hitbox(f, [4, 22], [16, 25]), hurtbox(o))) {
           // No bar unless the first punch lands; tell the player why.
-          if (f === player && hittable(o)) {
+          if (f.human && hittable(o)) {
             const why = o.state === 'duck' ? 'DUCKED!' : o.y > 8 ? 'JUMPED!' : 'TOO FAR';
             popup(why, f.x, GROUND - f.y - 34, C.grey, 40);
           }
@@ -489,12 +506,42 @@
       f.attackId = ++uid;
       freeze = f;
       setAnim(f, 'special', null, true);
-      popup('DASH KICK!', f.x, GROUND - 50, C.cyan, 60);
+      popup(SPECIALS[f.id] || 'SPECIAL!', f.x, GROUND - 50, C.cyan, 60);
       sound('special');
+    }
+
+    // Glitch's Teleport: vanish, reappear behind the enemy, strike.
+    function updateTeleport(f, o) {
+      if (f.st === 1) sparks(f.x, GROUND - 14, 12, [C.purple, C.cyan, C.white]);
+      if (f.st === 12) {
+        f.x = clamp(o.x - o.facing * 16, WALL_L, WALL_R);
+        if (Math.abs(f.x - o.x) < 10) f.x = clamp(o.x + o.facing * 16, WALL_L, WALL_R);
+        f.facing = o.x > f.x ? 1 : -1;
+        sparks(f.x, GROUND - 14, 12, [C.purple, C.cyan, C.white]);
+        shake(2, 8);
+      }
+      f.hidden = f.st > 4 && f.st < 12 && f.st % 2 === 0;
+      if (f.st === 26 && Math.abs(f.x - o.x) < 26) {
+        f.specialHit = true;
+        sparks(o.x, GROUND - o.y - 16, 14, [C.purple, C.cyan, C.yellow]);
+      }
+      if (f.animT >= animTotal(f)) {
+        freeze = null;
+        f.hidden = false;
+        toIdle(f);
+        if (f.specialHit && o.hp > 0) {
+          applyDamage(o, DMG.special, f, true);
+          launch(o, f, 3.2, 3.6);
+          hitstop = 8;
+          shake(6, 18);
+          sound('strong');
+        }
+      }
     }
 
     // The Dash Kick: everything else freezes while the Ninja flies across the screen.
     function updateSpecial(f, o) {
+      if (f.id === 'glitch') { updateTeleport(f, o); return; }
       const charge = 10;
       const dashEnd = charge + 21;
       if (f.st < charge) {
@@ -502,7 +549,7 @@
       } else if (f.st < dashEnd) {
         f.x = clamp(f.x + f.facing * 7, WALL_L, WALL_R);
         f.y = 5;
-        if (f.st % 2 === 0) ghosts.push({ pose: f.pose, x: f.x, y: f.y, facing: f.facing, life: 12 });
+        if (f.st % 2 === 0) ghosts.push({ id: f.id, pose: f.pose, x: f.x, y: f.y, facing: f.facing, life: 12 });
         if (f.st % 4 === 0) dust(f.x, 2);
         if (!f.specialHit && Math.abs(f.x - o.x) < 14) {
           f.specialHit = true;
@@ -755,6 +802,7 @@
         if (difficulty === 'easy' && rand() < 0.01) ai.waitT = 40;
         return i;
       }
+      if (b.hasSpecial && b.meter >= 100 && dist < 90 && hittable(p) && rand() < 0.03) { i.pSpecial = true; return i; }
       if (ai.cool <= 0 && hittable(p)) {
         if (rand() < level.low) { i.down = true; i.pCombo = true; }
         else if (rand() < level.combo) i.pCombo = true;
@@ -770,23 +818,32 @@
     const held = new Set();
     const pressed = new Set();
 
-    function readPlayer() {
+    function readPlayer(side = 0) {
       const i = blankInput();
-      i.left = held.has('left');
-      i.right = held.has('right');
-      i.up = held.has('up');
-      i.down = held.has('down');
-      i.pCombo = pressed.has('combo');
-      i.pStrong = pressed.has('strong');
-      i.pSpecial = pressed.has('special');
+      const k = (a) => `${side}:${a}`;
+      i.left = held.has(k('left'));
+      i.right = held.has(k('right'));
+      i.up = held.has(k('up'));
+      i.down = held.has(k('down'));
+      i.pCombo = pressed.has(k('combo'));
+      i.pStrong = pressed.has(k('strong'));
+      i.pSpecial = pressed.has(k('special'));
       return i;
+    }
+
+    function keyAction(key) {
+      if (twoPlayer) {
+        const m = KEYMAP_2P[key];
+        return m ? `${m[0]}:${m[1]}` : null;
+      }
+      return KEYMAP[key] ? `0:${KEYMAP[key]}` : null;
     }
 
     // ---- Round flow -----------------------------------------------------------
     // Phases: enter (next bot walks in), intro, fight, ko, time, result.
     let phase = 'intro';
     let phaseT = 0;
-    let timeLeft = roundSeconds * FPS;
+    let timeLeft = fullTime();
     let freeze = null;
     let paused = false;
     let winner = null;
@@ -827,10 +884,21 @@
     // The round is over: decide what happens next for each mode.
     function endOfRound() {
       const won = winner === player;
-      if (mode.kind === 'quick') {
-        result(!winner ? 'DRAW' : won ? 'YOU WIN!' : 'YOU LOSE', won ? C.yellow : C.white,
-          won ? ['THE BOT TURNED BACK INTO A PERSON.', 'THEY ARE FAST ASLEEP.'] : !winner ? ['NOBODY WON THIS ONE.'] : ['THE BOT GOT YOU THIS TIME.'],
-          [{ label: won ? 'FIGHT AGAIN' : 'TRY AGAIN', action: () => onExit('again') }, { label: 'MENU', action: () => onExit('menu') }]);
+      if (isQuick) {
+        const items = [
+          { label: 'FIGHT AGAIN', action: () => onExit('again') },
+          { label: 'NEW FIGHTERS', action: () => onExit('select') },
+          { label: 'MENU', action: () => onExit('menu') },
+        ];
+        if (twoPlayer) {
+          result(!winner ? 'DRAW' : `PLAYER ${winner === player ? 1 : 2} WINS!`, C.yellow,
+            [!winner ? 'NOBODY WON THIS ONE.' : `${winner.name} TAKES IT.`], items);
+        } else {
+          const lines = !winner ? ['NOBODY WON THIS ONE.']
+            : won ? (bot.isBot ? ['THE BOT TURNED BACK INTO A PERSON.', 'THEY ARE FAST ASLEEP.'] : [`YOU BEAT ${bot.name}.`])
+            : [`${bot.name} GOT YOU THIS TIME.`];
+          result(!winner ? 'DRAW' : won ? 'YOU WIN!' : 'YOU LOSE', won ? C.yellow : C.white, lines, items);
+        }
         return;
       }
       if (isLevel) {
@@ -873,7 +941,7 @@
       fighters = [player, bot];
       resetFighter(player, player.x, fromRight ? 1 : -1);
       player.comboCount = 0;
-      timeLeft = roundSeconds * FPS;
+      timeLeft = fullTime();
       winner = null;
       decisive = true;
       setPhase('enter');
@@ -885,7 +953,7 @@
       for (const f of fighters) { f.hp = HP; f.trailHp = HP; }
       resetFighter(player, 84, 1);
       resetFighter(bot, 172, -1);
-      timeLeft = roundSeconds * FPS;
+      timeLeft = fullTime();
       winner = null;
       setPhase('intro');
     }
@@ -909,8 +977,8 @@
 
       phaseT++;
       const live = phase === 'fight';
-      player.input = live ? readPlayer() : blankInput();
-      bot.input = live && aiOn ? think(bot, player) : blankInput();
+      player.input = live ? readPlayer(0) : blankInput();
+      bot.input = !live ? blankInput() : twoPlayer ? readPlayer(1) : aiOn ? think(bot, player) : blankInput();
       if (phase === 'enter') {
         // The next bot walks in from the edge of the field.
         bot.input[player.x > bot.x ? 'right' : 'left'] = Math.abs(player.x - bot.x) > 60;
@@ -949,12 +1017,12 @@
           if (w.y === 0 && !['launched', 'down', 'ko'].includes(w.state)) {
             w.combo = null;
             setState(w, 'victory');
-            setAnim(w, w === player ? 'victory' : 'idle', null, true);
+            setAnim(w, w.isBot ? 'idle' : 'victory', null, true);
           }
         }
         // A beaten bot slowly turns back into a person, asleep.
-        if (decisive && phaseT >= 80 && winner === player && bot.state === 'ko') setState(bot, 'convert');
-        if (decisive && phase === 'time' && phaseT === 80 && winner === player && bot.state !== 'ko') {
+        if (decisive && bot.isBot && phaseT >= 80 && winner === player && bot.state === 'ko') setState(bot, 'convert');
+        if (decisive && bot.isBot && phase === 'time' && phaseT === 80 && winner === player && bot.state !== 'ko') {
           setState(bot, 'convert');
           bot.pose = poseFor('down');
           bot.anim = null;
@@ -1040,6 +1108,7 @@
         drawPose(ctx, `person-${f.shirt}`, lying, sx, sy, { flip, alpha: t });
         return;
       }
+      if (f.hidden) return;
       const blink = f.invuln > 0 && Math.floor(f.invuln / 3) % 2;
       drawPose(ctx, f.id, f.pose, sx, sy, { flip, alpha: blink ? 0.5 : 1 });
     }
@@ -1073,9 +1142,10 @@
       ctx.fillStyle = C.night;
       ctx.fillRect(0, 0, W, 12);
       drawText(player.name, 5, 4, C.night); drawText(player.name, 4, 3, player.team);
-      const bn = mode.kind === 'quick' ? `${bot.name} ${difficulty.toUpperCase()}` : bot.name;
+      const bn = !isQuick ? bot.name : twoPlayer ? `P2 ${bot.name}` : `CPU ${bot.name}`;
       drawText(bn, W - 4 - textWidth(bn) + 1, 4, C.night); drawText(bn, W - 4 - textWidth(bn), 3, C.white);
-      const where = isLevel ? `LEVEL ${mode.level}  ENEMY ${enemyIndex + 1}/${LEVEL_ENEMIES}` : isBoss ? `BOSS  ROUND ${round}` : 'GRASSY FIELDS';
+      const where = isLevel ? `LEVEL ${mode.level}  ENEMY ${enemyIndex + 1}/${LEVEL_ENEMIES}` : isBoss ? `BOSS  ROUND ${round}`
+        : twoPlayer ? 'QUICK FIGHT' : `QUICK  ${difficulty.toUpperCase()}`;
       textC(where, W / 2, 3, C.yellow);
       if (isBoss) {
         // Round wins: one pip per round won.
@@ -1093,8 +1163,9 @@
       drawHealth(player, 6, false);
       drawHealth(bot, W - 6 - 104, true);
       ctx.fillStyle = C.dark; ctx.fillRect(W / 2 - 14, 123, 28, 17);
-      const secs = Math.max(0, Math.ceil(timeLeft / FPS));
-      textC(String(secs), W / 2, 125, secs <= 10 && frame % 30 < 15 ? C.red : C.white, 2, null);
+      const secs = noLimit ? '--' : Math.max(0, Math.ceil(timeLeft / FPS));
+      if (noLimit) drawInfinity(W / 2, 131);
+      else textC(String(secs), W / 2, 125, secs <= 10 && frame % 30 < 15 ? C.red : C.white, 2, null);
 
       // Combo counter on the attacker's side.
       for (const f of fighters) {
@@ -1104,6 +1175,15 @@
           drawText(label, x + 1, 31, C.night, 2);
           drawText(label, x, 30, f.comboCount >= COMBO_MAX ? C.yellow : C.white, 2);
         }
+      }
+    }
+
+    function drawInfinity(cx, cy) {
+      ctx.fillStyle = C.white;
+      for (let a = 0; a < Math.PI * 2; a += 0.08) {
+        const x = Math.sin(a) * 9;
+        const y = Math.sin(a * 2) * 3.5;
+        ctx.fillRect(Math.round(cx + x - 1), Math.round(cy + y - 1), 2, 2);
       }
     }
 
@@ -1129,7 +1209,11 @@
       ctx.fillStyle = full ? (frame % 20 < 10 ? C.yellow : C.cyan) : C.cyan;
       const mw = Math.round((f.meter / 100) * w);
       ctx.fillRect(mirror ? x + w - mw : x, my, mw, 4);
-      if (full && frame % 40 < 28) drawText('SPECIAL READY: M', x, 137, C.yellow);
+      if (full && f.human && frame % 40 < 28) {
+        const key = twoPlayer ? (f.side === 0 ? 'H' : '/') : 'M';
+        const label = `SPECIAL READY: ${key}`;
+        drawText(label, mirror ? x + w - textWidth(label) : x, 137, C.yellow);
+      }
     }
 
     function drawMenu(title, titleColor, lines) {
@@ -1151,7 +1235,11 @@
       });
     }
 
-    const CONTROL_LINES = [
+    const CONTROL_LINES = twoPlayer ? [
+      'P1: WASD  F COMBO  G STRONG  H SPECIAL',
+      'P2: ARROWS  , COMBO  . STRONG  / SPECIAL',
+      'ESC: PAUSE',
+    ] : [
       'A D: MOVE   W: JUMP   S: DUCK',
       'SPACE: COMBO  K: STRONG  M: SPECIAL',
       'OR ARROWS + Z X C',
@@ -1167,7 +1255,7 @@
       drawClouds();
 
       for (const z of sleepers) drawPose(ctx, `person-${z.shirt}`, { ...poseFor('down'), face: 'sleep' }, z.x, GROUND, { flip: z.facing === -1 });
-      for (const g of ghosts) drawPose(ctx, 'ninja', g.pose, g.x, GROUND - g.y, { flip: g.facing === -1, alpha: g.life / 24 });
+      for (const g of ghosts) drawPose(ctx, g.id, g.pose, g.x, GROUND - g.y, { flip: g.facing === -1, alpha: g.life / 24 });
       const order = fighters.slice().sort((a, b) => (['combo', 'strong', 'lowkick', 'slam', 'special'].includes(a.state) ? 1 : 0)
         - (['combo', 'strong', 'lowkick', 'slam', 'special'].includes(b.state) ? 1 : 0));
       order.forEach(drawFighter);
@@ -1178,8 +1266,9 @@
       }
       for (const f of fighters) {
         // Only your own timing bar shows; the bot's combo shows as its hit counter.
-        if (f === player && f.combo?.phase === 'bar') drawBar(f, f.combo, barsSeen < 6 ? 'SPACE ON YELLOW' : null);
-        if (f === player && f.slam) drawBar(f, f.slam, 'SLAM! SPACE');
+        const comboKey = twoPlayer ? (f.side === 0 ? 'F' : ',') : 'SPACE';
+        if (f.human && f.combo?.phase === 'bar') drawBar(f, f.combo, barsSeen < 6 ? `${comboKey} ON YELLOW` : null);
+        if (f.human && f.slam) drawBar(f, f.slam, `SLAM! ${comboKey}`);
         // Duck stamina, only while ducking.
         if (f.state === 'duck' && f.duckTime > 30) {
           const left = 1 - f.duckTime / DUCK_MAX;
@@ -1246,14 +1335,14 @@
       const key = e.key.toLowerCase();
       if (key === 'escape' || key === 'p') { togglePause(); return; }
       if ((paused || phase === 'result') && menuKey(key)) return;
-      const action = KEYMAP[key];
+      const action = keyAction(key);
       if (!action) return;
       if (!held.has(action)) pressed.add(action);
       held.add(action);
     }
 
     function keyup(e) {
-      const action = KEYMAP[e.key.toLowerCase()];
+      const action = keyAction(e.key.toLowerCase());
       if (action) held.delete(action);
     }
 
