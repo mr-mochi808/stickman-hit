@@ -2,7 +2,17 @@
 
 Build order for the game described in `game-design.md`. Each step ends with something you can play and check before moving on. Numbers (damage, speeds, timers) are starting points to tune by play-testing.
 
-## Step 1: First real fight
+## Progress
+
+**Steps 1 to 4 are built** and waiting for play-testing. Play → choose Easy / Normal / Hard → Ninja vs one bot on the Grassy Fields.
+
+- All five fighters, plus the gray bot and the sleeping person a bot turns back into, are drawn at 28×28. The fight blends smoothly between poses. ROBOT is renamed CYBORG and the Boxer's special is now Haymaker (in the data; only the Ninja is playable so far).
+- Code: `characters.js` (sprites, poses, animations), `fight.js` (the fight, HUD, computer opponent), `title.js` (menus; Play now opens the difficulty screen).
+- Extras pulled in early: a beaten bot collapses and fades into a sleeping person (from Step 5), and there's a pause menu (Esc or P).
+- Not wired up yet: the character select screen still exists for Quick Fight (Step 9) but Play no longer opens it, and the "type GLITCH" unlock still works there.
+- Tuning numbers live at the top of `fight.js` (damage, timing-bar zones and speed, duck limit, meter fill, computer opponent settings per difficulty).
+
+## Step 1: First real fight (built)
 
 The goal is the Ninja fighting one bot on the Grassy Fields.
 
@@ -14,7 +24,7 @@ The goal is the Ninja fighting one bot on the Grassy Fields.
 - A very simple computer bot that walks up and attacks.
 - Both control layouts (WASD + Space/K/M, arrows + Z/X/C).
 
-## Step 2: Combos
+## Step 2: Combos (built)
 
 - The **Space combo**, up to 7 hits, with the **timing bar** (Perfect 30 / green 12 / red ends it). The bar gets faster each hit.
 - The combo counter on the side, and "PERFECT!" pop-ups.
@@ -23,13 +33,13 @@ The goal is the Ninja fighting one bot on the Grassy Fields.
 - The **low kick** (duck + Space/K): trip, launch, slam.
 - Effects: hit sparks, dust, and screen shake.
 
-## Step 3: Special moves
+## Step 3: Special moves (built)
 
 - A special meter under each health bar that fills from combos and damage.
 - The **freeze effect**: everything stops except the fighter doing the special.
 - The Ninja's **Dash Kick**, fast and Fang-like.
 
-## Step 4: A smarter computer
+## Step 4: A smarter computer (built)
 
 - **Easy / Normal / Hard.**
 - Random high and low attacks. Combos on Normal and Hard, and mostly combos on Hard.

@@ -57,7 +57,7 @@
   .poses { display: flex; flex-wrap: wrap; gap: 10px; }
   .frame { display: grid; gap: 4px; justify-items: center; }
   .frame canvas { width: 96px; height: 96px; image-rendering: pixelated; background: var(--frame-bg); border: 2px solid var(--line); }
-  .frame canvas.actual { width: 24px; height: 24px; border: 0; outline: 4px solid var(--frame-bg); margin: 36px 4px; }
+  .frame canvas.actual { width: 28px; height: 28px; border: 0; outline: 4px solid var(--frame-bg); margin: 36px 4px; }
   .label { font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
 
   .info { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px 32px; }
@@ -86,9 +86,9 @@
 
 <div class="wrap">
   <header>
-    <span class="label">Stickman Hit / 1v1 fighter roster / draft 2</span>
+    <span class="label">Stickman Hit / fighter roster / draft 3</span>
     <h1>Pick your stickman</h1>
-    <p class="lede">Four starting fighters plus one secret one, each drawn as a 24×24 pixel sprite with 7 poses: idle, two walk frames, jump, attack, getting hit and victory. Names are placeholders until the final names are picked.</p>
+    <p class="lede">You start as the Ninja. Cyborg is turning people into bots, and every boss you beat turns back to normal and joins your team. Each fighter is a 28×28 pixel sprite; in a fight they also get duck, combo, strong attack, low kick, special, knocked-down and KO animations. Names are placeholders until the final names are picked.</p>
   </header>
 
   <div class="stage"><canvas id="stage" width="256" height="72" aria-label="The four fighters trading hits on a grass strip"></canvas></div>
@@ -99,9 +99,9 @@
     <h2>How the roster is balanced</h2>
     <ul>
       <li>Every fighter gets exactly <strong>12 stat points</strong> spread across Power, Speed, Reach and Defense, so nobody is simply better than the others.</li>
-      <li>Each fighter has one clear strength. BOXER is the even starter, NINJA is the fastest, SAMURAI has strong hits with good reach, and ROBOT has the most armor.</li>
-      <li>GLITCH is locked at the start, but he gets the same 12 points as everyone else. Unlocking him gives you a new way to play, not a stronger fighter. His Teleport is strong, so it needs a cooldown.</li>
-      <li>Rough matchups: BOXER beats SAMURAI (gets inside the sword), SAMURAI beats ROBOT (Counter Slash punishes the slow Rocket Punch), ROBOT beats NINJA (armor shrugs off quick hits), NINJA beats BOXER (too fast to hit).</li>
+      <li>Each fighter has one clear strength. NINJA is the fastest, BOXER is the even all-rounder, SAMURAI has strong hits with good reach, and CYBORG has the most armor.</li>
+      <li>In a fight everyone has 1,000 health. A full Perfect combo does about 200, the strong attack 50, and a special 150. The stats will shape speed and reach once more fighters are playable.</li>
+      <li>Rough matchups: BOXER beats SAMURAI (gets inside the sword), SAMURAI beats CYBORG (Counter Slash punishes the slow Rocket Punch), CYBORG beats NINJA (armor shrugs off quick hits), NINJA beats BOXER (too fast to hit).</li>
     </ul>
     <p class="totals" id="totals"></p>
   </section>
@@ -133,7 +133,7 @@
 
     const name = el('div', 'name');
     name.append(el('h3', null, ch.name), el('span', null, ch.tagline));
-    if (ch.locked) name.append(el('span', 'badge', 'Locked'));
+    name.append(el('span', 'badge', ch.id === 'ninja' ? 'Playable now' : 'Locked'));
 
     const poses = el('div', 'poses');
     POSE_ORDER.forEach((p) => {
@@ -168,9 +168,7 @@
     const special = el('div', 'special');
     special.append(el('span', 'label', 'Special move'), el('strong', null, ch.special.name), el('p', null, ch.special.text));
     right.append(special, el('p', 'bio', `“${ch.bio}”`));
-    if (ch.locked) {
-      right.append(el('p', 'unlock', 'How to unlock: for now, type GLITCH on the character select screen. Later this could be a reward, like winning 10 fights.'));
-    }
+    right.append(el('p', 'unlock', `How you get him: ${ch.unlock}.`));
 
     const info = el('div', 'info');
     info.append(left, right);
@@ -186,7 +184,8 @@
   const stage = document.getElementById('stage');
   const ctx = stage.getContext('2d');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const [boxer, ninja, samurai, robot] = CHARACTERS;
+  const byId = (id) => CHARACTERS.find((c) => c.id === id);
+  const [boxer, ninja, samurai, robot] = ['boxer', 'ninja', 'samurai', 'cyborg'].map(byId);
   let t = 0;
 
   function drawStage() {
@@ -197,11 +196,11 @@
 
     const beat = Math.floor(t / 40) % 4;
     const walk = Math.floor(t / 12) % 2 ? 'walk1' : 'walk2';
-    // Left pair: BOXER vs SAMURAI. Right pair: NINJA vs ROBOT.
-    drawSprite(ctx, boxer.sprites[beat === 1 ? 'attack' : beat === 3 ? 'hit' : 'idle'], 36, 34);
-    drawSprite(ctx, samurai.sprites[beat === 1 ? 'hit' : beat === 3 ? 'attack' : 'idle'], 58, 34, 1, true);
-    drawSprite(ctx, ninja.sprites[beat === 0 ? 'attack' : beat === 2 ? 'jump' : walk], 172, beat === 2 ? 30 : 34);
-    drawSprite(ctx, robot.sprites[beat === 0 ? 'hit' : beat === 2 ? 'attack' : 'idle'], 196, 34, 1, true);
+    // Left pair: BOXER vs SAMURAI. Right pair: NINJA vs CYBORG.
+    drawSprite(ctx, boxer.sprites[beat === 1 ? 'attack' : beat === 3 ? 'hit' : 'idle'], 36, 30);
+    drawSprite(ctx, samurai.sprites[beat === 1 ? 'hit' : beat === 3 ? 'attack' : 'idle'], 60, 30, 1, true);
+    drawSprite(ctx, ninja.sprites[beat === 0 ? 'attack' : beat === 2 ? 'jump' : walk], 172, beat === 2 ? 26 : 30);
+    drawSprite(ctx, robot.sprites[beat === 0 ? 'hit' : beat === 2 ? 'attack' : 'idle'], 198, 30, 1, true);
   }
 
   function tick() {

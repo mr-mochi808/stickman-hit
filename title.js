@@ -68,6 +68,10 @@
     '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'],
     ':': ['00000', '01100', '01100', '00000', '01100', '01100', '00000'],
     '!': ['00100', '00100', '00100', '00100', '00100', '00000', '00100'],
+    '.': ['00000', '00000', '00000', '00000', '00000', '01100', '01100'],
+    ',': ['00000', '00000', '00000', '00000', '01100', '00100', '01000'],
+    '?': ['01110', '10001', '00001', '00110', '00100', '00000', '00100'],
+    '+': ['00000', '00100', '00100', '11111', '00100', '00100', '00000'],
     '>': ['01000', '00100', '00010', '00001', '00010', '00100', '01000'],
     '<': ['00010', '00100', '01000', '10000', '01000', '00100', '00010'],
     '/': ['00001', '00001', '00010', '00100', '01000', '10000', '10000'],
@@ -208,7 +212,7 @@
 
   const screens = {
     title: [
-      { label: 'PLAY', icon: PLAY_ICON, y: TILE * 4 + 8, action: () => go('select') },
+      { label: 'PLAY', icon: PLAY_ICON, y: TILE * 4 + 8, action: () => go('difficulty') },
       { label: 'SETTINGS', icon: GEAR, y: TILE * 5 + 16, action: () => go('settings') },
     ],
     settings: [
@@ -217,7 +221,14 @@
       { key: 'shake', label: 'SHAKE', y: TILE * 5 + 8 },
       { label: 'BACK', y: TILE * 6 + 16, action: () => go('title') },
     ],
-    // Four portrait boxes plus a small back button, filled in below.
+    difficulty: [
+      { label: 'EASY', y: TILE * 2 + 8, action: () => startFight('easy') },
+      { label: 'NORMAL', y: TILE * 3 + 12, action: () => startFight('normal') },
+      { label: 'HARD', y: TILE * 4 + 16, action: () => startFight('hard') },
+      { label: 'BACK', y: TILE * 6 + 8, action: () => go('title') },
+    ],
+    fight: [],
+    // Character select (for Quick Fight later): portrait boxes plus a back button, filled in below.
     select: [],
     versus: [
       { label: 'BACK', y: H - TILE - 2, action: () => go('title') },
@@ -226,8 +237,8 @@
 
   // ---- Character select -------------------------------------------------
   const FIGHTERS = window.CHARACTERS;
-  const PORTRAIT = 28;
-  const PORTRAIT_GAP = 8;
+  const PORTRAIT = 32;
+  const PORTRAIT_GAP = 6;
   const PORTRAIT_Y = 36;
   const PORTRAIT_X = (W - (FIGHTERS.length * PORTRAIT + (FIGHTERS.length - 1) * PORTRAIT_GAP)) / 2;
   const PLAYER_COLORS = [C.red, C.sky];
@@ -292,8 +303,25 @@
 
   function go(next) {
     if (next === 'select') picks = [];
+    if (next !== 'fight') fight = null;
     screen = next;
-    selected = 0;
+    selected = next === 'difficulty' ? 1 : 0;
+  }
+
+  // ---- The fight ---------------------------------------------------------
+  let fight = null;
+
+  function startFight(difficulty) {
+    fight = window.StickFight.create({
+      ui: { drawText, textWidth, C, blip, settings },
+      difficulty,
+      onExit: (action) => {
+        if (action === 'again') startFight(difficulty);
+        else go('title');
+      },
+    });
+    screen = 'fight';
+    window.stickFight = fight;
   }
 
   function activate(i) {
@@ -339,12 +367,12 @@
       const sprite = f.sprites.idle.map((row) => row.replace(/[^.]/g, 'k'));
       window.drawSprite(ctx, sprite, x + 2, y + 3);
       ctx.fillStyle = C.yellow;
-      ctx.fillRect(x + 10, y + 14, 8, 6);
-      ctx.fillRect(x + 11, y + 10, 1, 4);
-      ctx.fillRect(x + 16, y + 10, 1, 4);
-      ctx.fillRect(x + 11, y + 10, 6, 1);
+      ctx.fillRect(x + 12, y + 16, 8, 6);
+      ctx.fillRect(x + 13, y + 12, 1, 4);
+      ctx.fillRect(x + 18, y + 12, 1, 4);
+      ctx.fillRect(x + 13, y + 12, 6, 1);
       ctx.fillStyle = C.night;
-      ctx.fillRect(x + 13, y + 16, 2, 2);
+      ctx.fillRect(x + 15, y + 18, 2, 2);
       return;
     }
     window.drawSprite(ctx, f.sprites[hot ? 'victory' : 'idle'], x + 2, y + 3);
@@ -461,7 +489,7 @@
     const bob = beat % 2 === 0 && Math.floor(frame / 15) % 2 ? scale : 0;
     const size = window.SPRITE_SIZE * scale;
     const y = GROUND_Y - size + scale;
-    const gap = 22 * scale;
+    const gap = 24 * scale;
     window.drawSprite(ctx, a.sprites[fightPose(beat, true)], x, y + bob, scale);
     window.drawSprite(ctx, b.sprites[fightPose(beat, false)], x + gap, y + bob, scale, true);
     if (beat === 1) drawIcon(HIT_SPARK, x + gap - 2, y + 4 * scale);
@@ -469,9 +497,9 @@
   }
 
   function drawFighters() {
-    const [boxer, ninja, samurai, robot] = FIGHTERS;
-    drawPair(boxer, samurai, TILE + 6, 0);
-    drawPair(ninja, robot, TILE * 11 + 4, 40);
+    const by = (id) => FIGHTERS.find((f) => f.id === id);
+    drawPair(by('ninja'), by('boxer'), TILE - 2, 0);
+    drawPair(by('samurai'), by('cyborg'), TILE * 11 - 4, 40);
   }
 
   function drawTitle() {
@@ -529,8 +557,8 @@
     // Big previews: player 1 on the left, player 2 on the right.
     const walk = Math.floor(frame / 12) % 2 ? 'walk1' : 'walk2';
     const p1 = picks[0] != null ? FIGHTERS[picks[0]] : shown;
-    window.drawSprite(ctx, p1.sprites[picks[0] != null ? 'victory' : walk], 8, 62, 2);
-    if (picker === 1) window.drawSprite(ctx, shown.sprites[walk], W - 56, 62, 2, true);
+    window.drawSprite(ctx, p1.sprites[picks[0] != null ? 'victory' : walk], 4, 52, 2);
+    if (picker === 1) window.drawSprite(ctx, shown.sprites[walk], W - 60, 52, 2, true);
 
     drawText('ENTER: PICK  ESC: BACK', W - textWidth('ENTER: PICK  ESC: BACK') - 4, H - 13, C.grey);
   }
@@ -559,13 +587,21 @@
       drawSelect();
     } else if (screen === 'versus') {
       drawVersus();
+    } else if (screen === 'difficulty') {
+      drawTextCentered('CHOOSE DIFFICULTY', 10, C.yellow, 1, C.night);
+      drawTextCentered('NINJA VS BOTS IN THE GRASSY FIELDS', 22, C.white, 1, C.night);
     }
     screens[screen].forEach(drawButton);
   }
 
   function loop() {
     frame++;
-    render();
+    if (fight) {
+      fight.update();
+      fight.draw(ctx);
+    } else {
+      render();
+    }
     requestAnimationFrame(loop);
   }
 
@@ -595,6 +631,11 @@
   }
 
   canvas.addEventListener('pointermove', (e) => {
+    if (fight) {
+      const { x, y } = toCanvas(e);
+      canvas.style.cursor = fight.pointer('move', x, y) ? 'pointer' : 'default';
+      return;
+    }
     const i = hitTest(e);
     if (i >= 0 && i !== selected) {
       selected = i;
@@ -603,15 +644,31 @@
     canvas.style.cursor = i >= 0 ? 'pointer' : 'default';
   });
   canvas.addEventListener('pointerdown', (e) => {
+    if (fight) return;
     pressed = hitTest(e);
   });
   window.addEventListener('pointerup', (e) => {
+    if (fight) {
+      const { x, y } = toCanvas(e);
+      fight.pointer('up', x, y);
+      return;
+    }
     const i = hitTest(e);
     if (i >= 0 && i === pressed) activate(i);
     pressed = -1;
   });
 
+  const GAME_KEYS = [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+  window.addEventListener('keyup', (e) => {
+    if (fight) fight.keyup(e);
+  });
+
   window.addEventListener('keydown', (e) => {
+    if (GAME_KEYS.includes(e.key)) e.preventDefault();
+    if (fight) {
+      if (!e.repeat) fight.keydown(e);
+      return;
+    }
     if (screen === 'select' && /^[a-z]$/i.test(e.key)) {
       typed = (typed + e.key.toUpperCase()).slice(-UNLOCK_CODE.length);
       const secret = FIGHTERS.find((f) => f.id === 'glitch');
