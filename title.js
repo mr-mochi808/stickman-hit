@@ -218,7 +218,8 @@
     Object.assign(settings, JSON.parse(localStorage.getItem('stickman-hit-settings')) || {});
   } catch (e) { /* storage unavailable: keep defaults */ }
 
-  let progress = { cleared: 0 };
+  // cleared: Main Mode levels beaten (6 per place, 24 in all). glitch: Glitch Mode levels beaten (4).
+  let progress = { cleared: 0, glitch: 0 };
   try {
     Object.assign(progress, JSON.parse(localStorage.getItem('stickman-hit-progress')) || {});
   } catch (e) { /* storage unavailable: start fresh */ }
@@ -287,10 +288,11 @@
     // Main Mode map: 5 levels and the boss, filled in below.
     map: [],
     fight: [],
+    ending: [],
     // Quick Fight setup (from docs/game-design.md): mode, stage, difficulty and timer.
     quick: [
       { opt: 'mode', label: 'MODE', values: ['VS COMPUTER', '2 PLAYERS'], x: 40, w: 176, y: 26 },
-      { opt: 'stage', label: 'STAGE', values: ['GRASSY FIELDS'], x: 40, w: 176, y: 45 },
+      { opt: 'stage', label: 'STAGE', values: () => availableStages().map((st) => st.name), x: 40, w: 176, y: 45 },
       { opt: 'difficulty', label: 'DIFFICULTY', values: ['EASY', 'NORMAL', 'HARD'], x: 40, w: 176, y: 64 },
       { opt: 'timer', label: 'TIMER', values: ['60 SEC', '2 MIN', 'NO LIMIT'], x: 40, w: 176, y: 83 },
       { label: 'PICK FIGHTERS', y: 106, action: () => openSelect() },
@@ -320,9 +322,8 @@
   // picks[0] is player 1's fighter, picks[1] is player 2's (or the computer's).
   let picks = [];
 
-  // Fighters unlock by beating them in Main Mode (Glitch: the secret code, until Glitch Mode exists).
-  const UNLOCK_CODE = 'GLITCH';
-  let typed = '';
+  // Fighters unlock by beating them in Main Mode; Glitch by beating Glitch Mode.
+  // (Older saves may have Glitch from the old secret code; that still counts.)
   let unlocked = [];
   try {
     unlocked = JSON.parse(localStorage.getItem('stickman-hit-unlocked')) || [];
@@ -330,16 +331,11 @@
 
   function isLocked(f) {
     if (f.id === 'brute') return progress.cleared < 6;
+    if (f.id === 'boxer') return progress.cleared < 12;
+    if (f.id === 'samurai') return progress.cleared < 18;
+    if (f.id === 'cyborg') return progress.cleared < MAIN_NODES;
+    if (f.id === 'glitch') return progress.glitch < 4 && !unlocked.includes('glitch');
     return !!f.locked && !unlocked.includes(f.id);
-  }
-
-  function unlock(f) {
-    unlocked.push(f.id);
-    try {
-      localStorage.setItem('stickman-hit-unlocked', JSON.stringify(unlocked));
-    } catch (e) { /* ignore */ }
-    flash = { text: `${f.name} UNLOCKED!`, until: frame + 120 };
-    [523, 659, 784, 1047].forEach((n, i) => setTimeout(() => blip(n), i * 90));
   }
 
   let flash = null;
@@ -363,7 +359,7 @@
       action: () => {
         if (isLocked(f)) {
           blip(160);
-          flash = { text: f.id === 'brute' ? 'BEAT THE BOT BRUTE TO UNLOCK' : 'BEAT HIM IN MAIN MODE TO UNLOCK', until: frame + 70 };
+          flash = { text: f.id === 'brute' ? 'BEAT THE BOT BRUTE TO UNLOCK' : f.id === 'glitch' ? 'BEAT GLITCH MODE TO UNLOCK' : 'BEAT HIM IN MAIN MODE TO UNLOCK', until: frame + 70 };
           return;
         }
         picks.push(f);
@@ -397,16 +393,30 @@
       p2: picks[1].id,
       twoPlayer: twoPlayers(),
       timer: TIMER_SECONDS[quickOpts.timer],
+      stage: availableStages()[quickOpts.stage % availableStages().length].id,
+      glitch: !!availableStages()[quickOpts.stage % availableStages().length].glitch,
     });
   }
 
+  const STAGES = [
+    { id: 'grassy', name: 'GRASSY FIELDS', need: 0 },
+    { id: 'dojo', name: 'THE DOJO', need: 6 },
+    { id: 'temple', name: 'CHERRY TEMPLE', need: 12 },
+    { id: 'dusk', name: 'SUNSET FIELDS', need: 18 },
+    { id: 'grassy', name: 'GLITCHED FIELDS', need: 24, glitch: true },
+  ];
+  const availableStages = () => STAGES.filter((st) => progress.cleared >= st.need);
+  const valuesOf = (btn) => (typeof btn.values === 'function' ? btn.values() : btn.values);
+
   function optLabel(btn) {
     if (btn.opt === 'difficulty' && twoPlayers()) return 'DIFFICULTY: --';
-    return `${btn.label}: ${btn.values[quickOpts[btn.opt]]}`;
+    const values = valuesOf(btn);
+    return `${btn.label}: ${values[quickOpts[btn.opt] % values.length]}`;
   }
 
   function cycleOpt(btn, dir) {
-    quickOpts[btn.opt] = (quickOpts[btn.opt] + dir + btn.values.length) % btn.values.length;
+    const n = valuesOf(btn).length;
+    quickOpts[btn.opt] = ((quickOpts[btn.opt] % n) + dir + n) % n;
     blip(dir > 0 ? 660 : 520);
   }
 
@@ -419,38 +429,89 @@
     toast = null;
     if (next !== 'fight') { fight = null; window.stickFight = null; }
     screen = next;
-    selected = next === 'difficulty' ? 1 : next === 'map' ? Math.min(progress.cleared, MAP_NODES - 1) : 0;
+    if (next === 'map') buildMap();
+    selected = next === 'difficulty' ? 1 : next === 'map' ? nextMapIndex() : 0;
   }
 
   // ---- Main Mode map -------------------------------------------------------
-  const MAP_NODES = 6; // levels 1-5, then the Bot Brute
+  // The four places of Main Mode (docs/game-design.md). Each has 5 levels, then a boss.
+  const WORLDS = [
+    { name: 'GRASSY FIELDS', short: 'FIELDS', stage: 'grassy', boss: 'brute', bossName: 'THE BOT BRUTE',
+      clearTitle: 'BOSS BEATEN!', clearLines: ['THE BOT BRUTE IS A PERSON AGAIN.', 'NEXT STOP: THE DOJO!'] },
+    { name: 'THE DOJO', short: 'DOJO', stage: 'dojo', boss: 'boxer', botForm: true, bossName: 'THE BOXER (A BOT)',
+      clearTitle: 'BOXER IS BACK!', clearLines: ['HE IS BACK TO NORMAL AND JOINS YOUR TEAM.', 'PLAY AS HIM IN QUICK FIGHT!'] },
+    { name: 'CHERRY BLOSSOM TEMPLE', short: 'TEMPLE', stage: 'temple', boss: 'samurai', botForm: true, bossName: 'THE SAMURAI (A BOT)',
+      clearTitle: 'SAMURAI IS BACK!', clearLines: ['HE IS BACK TO NORMAL AND JOINS YOUR TEAM.', 'PLAY AS HIM IN QUICK FIGHT!'] },
+    { name: 'BACK TO THE FIELDS', short: 'FINALE', stage: 'dusk', boss: 'cyborg', finale: true, bossName: 'CYBORG, THE SUPERVILLAIN',
+      clearTitle: 'CYBORG IS BEATEN!', clearLines: ['THE BOTS ARE FREE...'] },
+  ];
+  // Glitch Mode: short glitched versions of the places, then Glitch himself.
+  const GLITCH_PLACES = [
+    { name: 'GLITCHED FIELDS', stage: 'grassy' },
+    { name: 'GLITCHED DOJO', stage: 'dojo' },
+    { name: 'GLITCHED TEMPLE', stage: 'temple' },
+  ];
+  const MAIN_NODES = WORLDS.length * 6;
   const NODE = 24;
   const NODE_GAP = 12;
   const NODE_Y = 62;
-  const NODE_X = (W - (MAP_NODES * NODE + (MAP_NODES - 1) * NODE_GAP)) / 2;
   let mainDifficulty = 'normal';
 
-  for (let k = 0; k < MAP_NODES; k++) {
-    screens.map.push({
-      node: k,
-      x: NODE_X + k * (NODE + NODE_GAP),
-      y: NODE_Y,
-      w: NODE,
-      h: NODE,
+  const glitchOpen = () => progress.cleared >= MAIN_NODES;
+
+  function mapNodes() {
+    const nodes = [];
+    WORLDS.forEach((w, wi) => { for (let k = 0; k < 6; k++) nodes.push({ world: wi, k, idx: wi * 6 + k }); });
+    if (glitchOpen()) for (let k = 0; k < 4; k++) nodes.push({ world: WORLDS.length, k, glitch: true });
+    return nodes;
+  }
+
+  const nodeOpen = (n) => (n.glitch ? n.k <= progress.glitch : n.idx <= progress.cleared);
+  const nodeCleared = (n) => (n.glitch ? n.k < progress.glitch : n.idx < progress.cleared);
+
+  function buildMap() {
+    screens.map = mapNodes().map((n) => ({
+      node: n, x: -999, y: NODE_Y, w: NODE, h: NODE,
       action: () => {
-        if (k > progress.cleared) {
+        if (!nodeOpen(n)) {
           blip(160);
-          toast = { text: `BEAT LEVEL ${k} FIRST`, until: frame + 90 };
+          toast = { text: 'BEAT THE LEVEL BEFORE THIS ONE FIRST', until: frame + 90 };
           return;
         }
-        startNode(k);
+        startNode(n);
       },
-    });
+    }));
+    screens.map.push({ label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: () => go('title') });
   }
-  screens.map.push({ label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: () => go('title') });
 
-  function startNode(k) {
-    startFight(mainDifficulty, k < 5 ? { kind: 'level', level: k + 1 } : { kind: 'boss' });
+  // The first level you haven't beaten yet.
+  function nextMapIndex() {
+    const k = screens.map.findIndex((b) => b.node && !nodeCleared(b.node) && nodeOpen(b.node));
+    return k >= 0 ? k : Math.max(0, screens.map.length - 2);
+  }
+
+  function startNode(n) {
+    const mapIndex = screens.map.findIndex((b) => b.node === n);
+    if (n.glitch) {
+      if (n.k < 3) {
+        const place = GLITCH_PLACES[n.k];
+        startFight(mainDifficulty, { kind: 'level', node: n.k, glitchMode: true, glitch: true, stage: place.stage, label: `GLITCH ${n.k + 1}`,
+          tier: 21 + n.k, enemies: 2, timer: 45, mapIndex,
+          clearLines: n.k < 2 ? ['THE BOTS FLICKER AWAY.', `NEXT: ${GLITCH_PLACES[n.k + 1].name}`] : ['THE BOTS FLICKER AWAY.', 'GLITCH IS WAITING...'] });
+      } else {
+        startFight(mainDifficulty, { kind: 'boss', node: 3, glitchMode: true, glitch: true, boss: 'glitch', stage: 'grassy', label: 'GLITCH', tier: 25, mapIndex,
+          clearTitle: 'GLITCH IS BEATEN!', clearLines: ['HE JOINS YOUR TEAM.', 'PLAY AS HIM IN QUICK FIGHT!'] });
+      }
+      return;
+    }
+    const w = WORLDS[n.world];
+    if (n.k < 5) {
+      startFight(mainDifficulty, { kind: 'level', node: n.idx, stage: w.stage, label: `${w.short} ${n.k + 1}`, tier: n.world * 5 + n.k + 1, mapIndex,
+        clearLines: n.k === 4 ? ['ALL 3 BOTS ARE PEOPLE AGAIN.', `NEXT UP: ${w.bossName}!`] : null });
+    } else {
+      startFight(mainDifficulty, { kind: 'boss', node: n.idx, stage: w.stage, label: `${w.short} BOSS`, tier: (n.world + 1) * 5 + 1,
+        boss: w.boss, botForm: !!w.botForm, finale: !!w.finale, clearTitle: w.clearTitle, clearLines: w.clearLines, mapIndex });
+    }
   }
 
   function pickDifficulty(d) {
@@ -468,8 +529,9 @@
       mode,
       // Progress saves automatically the moment a level is cleared.
       onLevelClear: (n) => {
-        if (n > progress.cleared) {
-          progress.cleared = n;
+        const key = mode.glitchMode ? 'glitch' : 'cleared';
+        if (n + 1 > progress[key]) {
+          progress[key] = n + 1;
           saveProgress();
         }
       },
@@ -480,10 +542,11 @@
           fight = null;
           window.stickFight = null;
           openSelect();
+        } else if (action === 'ending') {
+          startEnding();
         } else if (action === 'next' || action === 'map') {
           go('map');
-          if (action === 'next') selected = Math.min(progress.cleared, MAP_NODES - 1);
-          else if (mode.kind !== 'quick') selected = mode.kind === 'boss' ? 5 : mode.level - 1;
+          if (action === 'map' && mode.mapIndex != null) selected = mode.mapIndex;
         } else {
           go('title');
         }
@@ -494,15 +557,16 @@
   }
 
   function drawNode(btn, i) {
-    const k = btn.node;
+    const n = btn.node;
+    if (btn.x < 0) return;
     const hot = i === selected;
-    const cleared = k < progress.cleared;
-    const open = k <= progress.cleared;
-    const boss = k === MAP_NODES - 1;
+    const cleared = nodeCleared(n);
+    const open = nodeOpen(n);
+    const boss = n.glitch ? n.k === 3 : n.k === 5;
     const { x, y } = btn;
     ctx.fillStyle = hot ? C.yellow : C.night;
     ctx.fillRect(x - 2, y - 2, NODE + 4, NODE + 4);
-    ctx.fillStyle = !open ? C.dark : cleared ? C.green : boss ? C.red : C.blue;
+    ctx.fillStyle = !open ? C.dark : cleared ? C.green : boss ? C.red : n.glitch ? '#ff4fd8' : C.blue;
     ctx.fillRect(x, y, NODE, NODE);
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     ctx.fillRect(x, y, NODE, 2);
@@ -512,8 +576,8 @@
       drawText('B', x + 9, y + 5, C.white);
       drawText('OSS', x + 3, y + 14, C.white);
     } else {
-      drawText(String(k + 1), x + 6, y + 6, C.night, 2);
-      drawText(String(k + 1), x + 5, y + 5, C.white, 2);
+      drawText(String(n.k + 1), x + 6, y + 6, C.night, 2);
+      drawText(String(n.k + 1), x + 5, y + 5, C.white, 2);
     }
     if (cleared) {
       // Check mark.
@@ -522,31 +586,104 @@
     }
   }
 
+  // Only the place of the chosen level is shown; moving past its end goes to the next place.
+  function layoutMap() {
+    const cur = screens.map[selected]?.node || screens.map.find((b) => b.node && !nodeCleared(b.node))?.node || screens.map[0].node;
+    const row = screens.map.filter((b) => b.node && b.node.world === cur.world);
+    const x0 = (W - (row.length * NODE + (row.length - 1) * NODE_GAP)) / 2;
+    for (const b of screens.map) if (b.node) b.x = -999;
+    row.forEach((b, k) => { b.x = x0 + k * (NODE + NODE_GAP); });
+    return { cur, row, x0 };
+  }
+
   function drawMap() {
-    drawTextCentered('GRASSY FIELDS', 6, C.yellow, 2, C.night);
-    drawTextCentered(`MAIN MODE  ${mainDifficulty.toUpperCase()}`, 22, C.grey, 1, C.night);
+    const { cur, row, x0 } = layoutMap();
+    const isGlitch = !!cur.glitch;
+    const world = isGlitch ? null : WORLDS[cur.world];
+    const places = WORLDS.length + (glitchOpen() ? 1 : 0);
+    drawTextCentered(isGlitch ? 'GLITCH MODE' : world.name, 6, isGlitch ? '#ff4fd8' : C.yellow, world && world.name.length > 16 ? 1 : 2, C.night);
+    drawTextCentered(`MAIN MODE  ${mainDifficulty.toUpperCase()}  PLACE ${cur.world + 1}/${places}`, 22, C.grey, 1, C.night);
     // The path between levels.
-    ctx.fillStyle = C.yellow;
-    for (let x = NODE_X + NODE; x < NODE_X + (MAP_NODES - 1) * (NODE + NODE_GAP); x += 4) {
-      ctx.fillRect(x, NODE_Y + NODE / 2 - 1, 2, 2);
-    }
+    ctx.fillStyle = isGlitch ? '#ff4fd8' : C.yellow;
+    for (let x = x0 + NODE; x < x0 + (row.length - 1) * (NODE + NODE_GAP); x += 4) ctx.fillRect(x, NODE_Y + NODE / 2 - 1, 2, 2);
+    // Arrows to the places before and after.
+    if (cur.world > 0) drawText('<', 4, NODE_Y + 8, C.white);
+    if (cur.world < places - 1) drawText('>', W - 9, NODE_Y + 8, C.white);
     // The Ninja stands on the chosen level.
     const btn = screens.map[selected];
-    if (btn && btn.node != null) {
+    if (btn && btn.node) {
       const ninja = FIGHTERS.find((f) => f.id === 'ninja');
       const bob = Math.floor(frame / 20) % 2;
       window.drawSprite(ctx, ninja.sprites[Math.floor(frame / 12) % 2 ? 'walk1' : 'idle'], btn.x - 2, NODE_Y - 30 + bob);
-      const k = btn.node;
-      const info = k < 5
-        ? [`LEVEL ${k + 1}: 3 BOTS IN A ROW, 60 SECONDS EACH`, 'HEALTH CARRIES OVER BETWEEN BOTS']
-        : ['BOSS: THE BOT BRUTE', 'BEST OF 3 ROUNDS, 90 SECONDS EACH'];
+      const n = btn.node;
+      let info;
+      if (n.glitch) {
+        info = n.k < 3 ? [`${GLITCH_PLACES[n.k].name}: 2 BOTS THAT TELEPORT`, '45 SECONDS EACH. THE SCREEN GLITCHES!']
+          : ['FINAL BOSS: GLITCH', 'BEST OF 3 ROUNDS. BEAT HIM TO UNLOCK HIM'];
+      } else if (n.k < 5) {
+        info = [`LEVEL ${n.k + 1}: 3 BOTS IN A ROW, 60 SECONDS EACH`, n.world === 3 ? 'TOUGHER BOTS! HEALTH CARRIES OVER' : 'HEALTH CARRIES OVER BETWEEN BOTS'];
+      } else {
+        info = [`BOSS: ${world.bossName}`, 'BEST OF 3 ROUNDS, 90 SECONDS EACH'];
+      }
       drawTextCentered(info[0], 94, C.white, 1, C.night);
       drawTextCentered(info[1], 104, C.grey, 1, C.night);
     }
-    if (progress.cleared >= MAP_NODES) {
-      drawTextCentered('CLEARED! THE DOJO IS NEXT (COMING SOON)', 116, C.green, 1, C.night);
-    }
+    if (progress.glitch >= 4) drawTextCentered('EVERYTHING CLEARED! YOU BEAT THE GAME!', 116, C.green, 1, C.night);
+    else if (glitchOpen() && !isGlitch) drawTextCentered('GLITCH MODE IS OPEN: GO RIGHT >', 116, '#ff4fd8', 1, C.night);
     drawText('ENTER: START  ESC: BACK', W - textWidth('ENTER: START  ESC: BACK') - 4, H - 13, C.grey);
+  }
+
+  // ---- Ending: everyone wakes up, then Glitch breaks the screen -------------
+  let endingT = 0;
+  const ENDING_LEN = 500;
+  const WAKERS = [
+    { id: 'person-r', x: 30 }, { id: 'person-y', x: 58 }, { id: 'boxer', x: 92 },
+    { id: 'samurai', x: 164 }, { id: 'person-g', x: 198 }, { id: 'person-c', x: 226 },
+  ];
+
+  function startEnding() {
+    fight = null;
+    window.stickFight = null;
+    screen = 'ending';
+    selected = 0;
+    endingT = 0;
+  }
+
+  function drawEnding() {
+    endingT++;
+    const t = endingT;
+    const { poseFor, lerpPose, drawPose } = window.Rig;
+    const ground = H - TILE * 2;
+    WAKERS.forEach((p, k) => {
+      const flip = p.x > W / 2;
+      const wake = t - 60 - k * 8;
+      let pose;
+      if (wake < 0) pose = { ...poseFor('down'), face: 'sleep' };
+      else if (wake < 30) pose = lerpPose({ ...poseFor('down'), face: 'sleep' }, poseFor('duck'), wake / 30);
+      else if (wake < 50) pose = lerpPose(poseFor('duck'), poseFor('idle1'), (wake - 30) / 20);
+      else pose = Math.floor((t + k * 10) / 24) % 2 ? poseFor('victory') : poseFor('idle1');
+      const hop = wake > 50 && Math.floor((t + k * 10) / 12) % 4 === 0 ? 3 : 0;
+      drawPose(ctx, p.id, pose, p.x, ground - hop, { flip });
+    });
+    drawPose(ctx, 'ninja', poseFor(t > 40 ? 'victory' : 'idle1'), W / 2, ground);
+    drawTextCentered('CYBORG IS BEATEN!', 8, C.yellow, 2, C.red);
+    if (t > 60) drawTextCentered('EVERYONE WAKES UP!', 28, C.white, 1, C.night);
+    if (t > 260) {
+      // Glitch appears for a moment...
+      const flick = t < 300 ? Math.floor(t / 3) % 2 : 1;
+      if (flick) drawPose(ctx, 'glitch', { ...poseFor('idle1'), teleport: t % 20 < 6 }, W / 2 + 24, ground - 26, { flip: true });
+      if (t > 280) drawTextCentered('...?', 42, '#ff4fd8', 1, C.night);
+      window.StickFight.glitchFx(ctx, Math.min(1, (t - 260) / 140));
+    }
+    if (t > 380) {
+      ctx.fillStyle = 'rgba(26, 28, 44, 0.6)';
+      ctx.fillRect(0, 56, W, 30);
+      drawTextCentered('GLITCH MODE UNLOCKED!', 64, t % 12 < 6 ? '#ff4fd8' : C.cyan, 2, C.night);
+    }
+    if (t >= ENDING_LEN) {
+      go('map');
+      selected = Math.max(0, screens.map.findIndex((b) => b.node && b.node.glitch));
+    }
   }
 
   function activate(i) {
@@ -819,6 +956,7 @@
 
   function render() {
     drawBackground(!['select', 'map', 'quick'].includes(screen));
+    if (!screens[screen]) screens[screen] = [];
     if (screen === 'title') {
       drawTitle();
       drawFighters();
@@ -831,6 +969,8 @@
       drawSelect();
     } else if (screen === 'versus') {
       drawVersus();
+    } else if (screen === 'ending') {
+      drawEnding();
     } else if (screen === 'map') {
       drawMap();
       if (toast && frame < toast.until) drawTextCentered(toast.text, 34, C.yellow, 1, C.night);
@@ -918,10 +1058,10 @@
       if (!e.repeat) fight.keydown(e);
       return;
     }
-    if (screen === 'select' && /^[a-z]$/i.test(e.key)) {
-      typed = (typed + e.key.toUpperCase()).slice(-UNLOCK_CODE.length);
-      const secret = FIGHTERS.find((f) => f.id === 'glitch');
-      if (typed === UNLOCK_CODE && isLocked(secret)) unlock(secret);
+    if (screen === 'ending') {
+      // Enter skips ahead to the Glitch part.
+      if ((e.key === 'Enter' || e.key === ' ') && endingT > 120 && endingT < 460) endingT = 460;
+      return;
     }
     const count = screens[screen].length;
     const cur = screens[screen][selected];

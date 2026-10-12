@@ -50,7 +50,7 @@
   };
 
   // Specials that are built so far. The others arrive with their bosses.
-  const SPECIALS = { ninja: 'DASH KICK!', glitch: 'TELEPORT!' };
+  const SPECIALS = { ninja: 'DASH KICK!', glitch: 'TELEPORT!', boxer: 'HAYMAKER!', samurai: 'COUNTER SLASH!', cyborg: 'ROCKET PUNCH!' };
 
   const KEYMAP = {
     a: 'left', arrowleft: 'left',
@@ -75,13 +75,13 @@
   function tunedAI(difficulty, tier, boss) {
     const base = AI_LEVELS[difficulty];
     const step = Math.max(0, tier - 1);
-    const scale = 1 - 0.06 * step - (boss ? 0.1 : 0);
+    const scale = Math.max(0.45, 1 - 0.035 * step - (boss ? 0.1 : 0));
     return {
       ...base,
       cooldown: base.cooldown.map((v) => Math.round(v * scale)),
       success: base.combo ? Math.min(0.95, base.success + 0.03 * step) : 0,
       duckBreak: Math.min(0.6, base.duckBreak + 0.03 * step),
-      speed: base.speed + 0.03 * step,
+      speed: base.speed + Math.min(0.35, 0.02 * step),
     };
   }
 
@@ -91,26 +91,32 @@
     const isLevel = mode.kind === 'level';
     const isQuick = mode.kind === 'quick';
     const twoPlayer = isQuick && !!mode.twoPlayer;
-    const tier = isLevel ? mode.level : isBoss ? 6 : 1;
+    const tier = mode.tier ?? (isLevel ? mode.level : isBoss ? 6 : 1);
+    const enemiesTotal = mode.enemies || LEVEL_ENEMIES;
+    const glitchy = !!mode.glitch;
+    const label = mode.label || (isLevel ? `LEVEL ${mode.level}` : 'BOSS');
     // Quick Fight timer: 60, 120 or 0 for no limit.
-    const roundSeconds = isBoss ? BOSS_SECONDS : isQuick && mode.timer != null ? mode.timer : ROUND_SECONDS;
+    const roundSeconds = isBoss ? BOSS_SECONDS : mode.timer != null ? mode.timer : ROUND_SECONDS;
     const noLimit = roundSeconds === 0;
     const fullTime = () => (noLimit ? Infinity : roundSeconds * FPS);
     let ctx = null;
     let uid = 0;
 
     // ---- Fighters ---------------------------------------------------------
-    function makeFighter(id, side) {
+    function makeFighter(id, side, botForm = false) {
       const ch = window.CHARACTERS.find((c) => c.id === id);
-      const isBot = id === 'bot' || id === 'brute';
+      const isBot = id === 'bot' || id === 'brute' || botForm;
       const aiCfg = tunedAI(difficulty, tier, id === 'brute');
       return {
         id,
         side,
         isBot,
         aiCfg,
-        name: id === 'brute' ? 'BOT BRUTE' : isBot ? 'BOT' : ch.name,
+        name: id === 'brute' ? 'BOT BRUTE' : botForm ? `BOT ${ch.name}` : isBot ? 'BOT' : ch.name,
         team: isBot ? C.grey : ch.team,
+        botForm,
+        // Which sprite to draw: bosses that are still bots are drawn gray.
+        rid: botForm ? `${id}-bot` : id,
         hasSpecial: !!SPECIALS[id],
         human: side === 0 || twoPlayer,
         // Fighters walk at a speed set by their Speed stat.
@@ -135,7 +141,7 @@
     }
 
     const player = makeFighter(isQuick && mode.p1 ? mode.p1 : 'ninja', 0);
-    let bot = makeFighter(isBoss ? 'brute' : isQuick && mode.p2 ? mode.p2 : 'bot', 1);
+    let bot = makeFighter(isBoss ? mode.boss || 'brute' : isQuick && mode.p2 ? mode.p2 : 'bot', 1, isBoss && !!mode.botForm);
     let fighters = [player, bot];
     // Beaten bots stay on the field, asleep.
     const sleepers = [];
@@ -238,7 +244,8 @@
     const overlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 
     function hittable(t) {
-      return t.invuln <= 0 && !['launched', 'down', 'getup', 'ko', 'convert', 'sleep', 'victory', 'special'].includes(t.state);
+      if (t.state === 'special') return !!t.guarding;
+      return t.invuln <= 0 && !['launched', 'down', 'getup', 'ko', 'convert', 'sleep', 'victory', 'counter'].includes(t.state);
     }
 
     // ---- Damage ---------------------------------------------------------------
@@ -291,6 +298,7 @@
         f.x += f.facing * 0.5;
         if (!f.hitDone && hittable(o) && overlap(hitbox(f, [4, 21], [16, 25]), hurtbox(o))) {
           f.hitDone = true;
+          if (countered(o, f)) return;
           const ko = applyDamage(o, DMG.strong, f);
           if (ko) launch(o, f, 2.4, 3); else stagger(o, f, 26, 2.4);
           sparks(...contactPoint(f, o), 10);
@@ -373,6 +381,7 @@
         return;
       }
 
+      if (c.n === 1 && countered(o, f)) { f.combo = null; toRecover(f, 10); return; }
       const dmg = c.n === 1 ? DMG.first : c.quality === 'perfect' ? DMG.perfect : DMG.good;
       const ko = applyDamage(o, dmg, f);
       setState(o, 'comboStun');
@@ -437,6 +446,7 @@
     function updateLowKick(f, o) {
       if (!f.hitDone && f.st >= 4 && f.st <= 10 && hittable(o) && overlap(hitbox(f, [4, 22], [0, 7]), hurtbox(o))) {
         f.hitDone = true;
+        if (countered(o, f)) return;
         const ko = applyDamage(o, DMG.low, f);
         launch(o, f, 0.5, ko ? 3 : 4);
         o.tripped = true;
@@ -498,12 +508,100 @@
       }
     }
 
+    // The Samurai's guard: if the enemy attacks during it, he slashes back.
+    function countered(t, a) {
+      if (t.state !== 'special' || !t.guarding) return false;
+      t.guarding = false;
+      setState(t, 'counter');
+      t.counterTarget = a;
+      setAnim(t, 'counter', null, true);
+      freeze = t;
+      popup('COUNTER!', t.x, GROUND - 50, C.yellow, 50);
+      sound('perfect');
+      return true;
+    }
+
+    function updateCounter(t, o) {
+      if (t.st === 6) { sparks(o.x, GROUND - o.y - 16, 14, [C.white, C.cyan, C.yellow]); shake(4, 10); }
+      if (t.animT >= animTotal(t)) {
+        freeze = null;
+        toIdle(t);
+        landSpecial(t, o);
+      }
+    }
+
+    // A special that connected: 150 damage and the enemy goes flying.
+    function landSpecial(f, o) {
+      if (o.hp <= 0 || countered(o, f)) return;
+      applyDamage(o, DMG.special, f, true);
+      launch(o, f, 3.2, 3.6);
+      hitstop = 8;
+      shake(6, 18);
+      sound('strong');
+    }
+
+    // Boxer's Haymaker: a long charge, then a huge punch.
+    function updateHaymaker(f, o) {
+      if (f.st < 20) {
+        if (f.st % 2 === 0) sparks(f.x - f.facing * 4, GROUND - 16, 2, [C.red, C.orange, C.yellow]);
+        if (f.st % 6 === 0) shake(1, 4);
+      } else if (f.st < 26) {
+        f.x = clamp(f.x + f.facing * 3, WALL_L, WALL_R);
+        if (!f.specialHit && Math.abs(f.x - o.x) < 28 && Math.sign(o.x - f.x) === f.facing) {
+          f.specialHit = true;
+          sparks(o.x, GROUND - o.y - 18, 16, [C.red, C.orange, C.yellow, C.white]);
+        }
+      }
+      if (f.animT >= animTotal(f)) {
+        freeze = null;
+        toIdle(f);
+        if (f.specialHit) landSpecial(f, o);
+      }
+    }
+
+    // Cyborg's Rocket Punch: the fist flies across the screen and comes back.
+    function updateRocket(f, o) {
+      if (f.st === 12) f.fist = { x: f.x + f.facing * 10, y: 15, dir: f.facing, out: true, dist: 0 };
+      const fist = f.fist;
+      if (fist) {
+        if (fist.out) {
+          fist.x += fist.dir * 5;
+          fist.dist += 5;
+          if (frame % 2 === 0) particles.push({ x: fist.x - fist.dir * 3, y: GROUND - fist.y, vx: -fist.dir * 0.5, vy: (rand() - 0.5) * 0.4, life: 10, color: rand() < 0.5 ? C.orange : C.yellow, g: 0 });
+          if (!f.specialHit && Math.abs(fist.x - o.x) < 8 && o.y < 28) {
+            f.specialHit = true;
+            fist.out = false;
+            sparks(o.x, GROUND - o.y - 15, 14, [C.orange, C.yellow, C.white]);
+            shake(3, 8);
+          } else if (fist.dist >= 180 || fist.x <= WALL_L || fist.x >= WALL_R) {
+            fist.out = false;
+          }
+        } else {
+          fist.x += Math.sign(f.x - fist.x) * 6;
+          if (Math.abs(fist.x - f.x) < 8) f.fist = null;
+        }
+      }
+      if ((f.st > 16 && !f.fist) || f.st > 300) {
+        f.fist = null;
+        freeze = null;
+        toIdle(f);
+        if (f.specialHit) landSpecial(f, o);
+      }
+    }
+
     function startSpecial(f, o) {
       setState(f, 'special');
       f.meter = 0;
       f.vx = 0;
       f.specialHit = false;
       f.attackId = ++uid;
+      if (f.id === 'samurai') {
+        // The guard doesn't freeze the game: it waits for the enemy to attack.
+        f.guarding = true;
+        setAnim(f, 'special', null, true);
+        popup('GUARD!', f.x, GROUND - 50, C.cyan, 40);
+        return;
+      }
       freeze = f;
       setAnim(f, 'special', null, true);
       popup(SPECIALS[f.id] || 'SPECIAL!', f.x, GROUND - 50, C.cyan, 60);
@@ -529,19 +627,19 @@
         freeze = null;
         f.hidden = false;
         toIdle(f);
-        if (f.specialHit && o.hp > 0) {
-          applyDamage(o, DMG.special, f, true);
-          launch(o, f, 3.2, 3.6);
-          hitstop = 8;
-          shake(6, 18);
-          sound('strong');
-        }
+        if (f.specialHit) landSpecial(f, o);
       }
     }
 
     // The Dash Kick: everything else freezes while the Ninja flies across the screen.
     function updateSpecial(f, o) {
       if (f.id === 'glitch') { updateTeleport(f, o); return; }
+      if (f.id === 'boxer') { updateHaymaker(f, o); return; }
+      if (f.id === 'cyborg') { updateRocket(f, o); return; }
+      if (f.id === 'samurai') {
+        if (f.animT >= animTotal(f)) { f.guarding = false; toIdle(f); }
+        return;
+      }
       const charge = 10;
       const dashEnd = charge + 21;
       if (f.st < charge) {
@@ -549,7 +647,7 @@
       } else if (f.st < dashEnd) {
         f.x = clamp(f.x + f.facing * 7, WALL_L, WALL_R);
         f.y = 5;
-        if (f.st % 2 === 0) ghosts.push({ id: f.id, pose: f.pose, x: f.x, y: f.y, facing: f.facing, life: 12 });
+        if (f.st % 2 === 0) ghosts.push({ id: f.rid, pose: f.pose, x: f.x, y: f.y, facing: f.facing, life: 12 });
         if (f.st % 4 === 0) dust(f.x, 2);
         if (!f.specialHit && Math.abs(f.x - o.x) < 14) {
           f.specialHit = true;
@@ -562,13 +660,7 @@
         freeze = null;
         f.y = 0;
         toIdle(f);
-        if (f.specialHit && o.hp > 0) {
-          applyDamage(o, DMG.special, f, true);
-          launch(o, f, 3.2, 3.6);
-          hitstop = 8;
-          shake(6, 18);
-          sound('strong');
-        }
+        if (f.specialHit) landSpecial(f, o);
       }
     }
 
@@ -669,6 +761,7 @@
         case 'lowkick': updateLowKick(f, o); break;
         case 'slam': updateSlam(f, o); break;
         case 'special': updateSpecial(f, o); break;
+        case 'counter': updateCounter(f, o); break;
         case 'recover':
           if (--f.recoverT <= 0) toIdle(f);
           break;
@@ -802,7 +895,14 @@
         if (difficulty === 'easy' && rand() < 0.01) ai.waitT = 40;
         return i;
       }
-      if (b.hasSpecial && b.meter >= 100 && dist < 90 && hittable(p) && rand() < 0.03) { i.pSpecial = true; return i; }
+      if (b.hasSpecial && b.meter >= 100 && hittable(p)) {
+        const attacking = ['strong', 'combo', 'lowkick'].includes(p.state) && p.st < 4;
+        const use = b.id === 'samurai' ? attacking && dist < 40
+          : b.id === 'boxer' ? dist < 36 && rand() < 0.05
+            : b.id === 'cyborg' ? dist > 30 && rand() < 0.03
+              : dist < 90 && rand() < 0.03;
+        if (use) { i.pSpecial = true; return i; }
+      }
       if (ai.cool <= 0 && hittable(p)) {
         if (rand() < level.low) { i.down = true; i.pCombo = true; }
         else if (rand() < level.combo) i.pCombo = true;
@@ -903,15 +1003,14 @@
       }
       if (isLevel) {
         if (!won) {
-          result('YOU LOSE', C.white, [`THE BOTS STOPPED YOU ON LEVEL ${mode.level}.`, 'RESTART THE LEVEL TO TRY AGAIN.'],
+          result('YOU LOSE', C.white, [`THE BOTS STOPPED YOU ON ${label}.`, 'RESTART THE LEVEL TO TRY AGAIN.'],
             [{ label: 'RESTART LEVEL', action: () => onExit('again') }, { label: 'MAP', action: () => onExit('map') }]);
-        } else if (enemyIndex < LEVEL_ENEMIES - 1) {
+        } else if (enemyIndex < enemiesTotal - 1) {
           nextEnemy();
         } else {
-          onLevelClear?.(mode.level);
-          const lines = mode.level < 5 ? ['ALL 3 BOTS ARE PEOPLE AGAIN.', 'YOUR HEALTH REFILLS FOR THE NEXT LEVEL.']
-            : ['ALL 3 BOTS ARE PEOPLE AGAIN.', 'NEXT UP: THE BOT BRUTE!'];
-          result(`LEVEL ${mode.level} CLEAR!`, C.yellow, lines,
+          onLevelClear?.(mode.node ?? mode.level);
+          const lines = mode.clearLines || [`ALL ${enemiesTotal} BOTS ARE PEOPLE AGAIN.`, 'YOUR HEALTH REFILLS FOR THE NEXT LEVEL.'];
+          result(`${label} CLEAR!`, C.yellow, lines,
             [{ label: 'CONTINUE', action: () => onExit('next') }, { label: 'MAP', action: () => onExit('map') }]);
         }
         return;
@@ -919,11 +1018,12 @@
       // Boss: best of 3 rounds.
       if (won) wins.player++; else if (winner) wins.bot++;
       if (wins.player >= BOSS_ROUNDS_TO_WIN) {
-        onLevelClear?.(6);
-        result('BOSS BEATEN!', C.yellow, ['THE BOT BRUTE IS A PERSON AGAIN.', 'THE GRASSY FIELDS ARE CLEAR!'],
-          [{ label: 'CONTINUE', action: () => onExit('next') }, { label: 'MAP', action: () => onExit('map') }]);
+        onLevelClear?.(mode.node ?? 6);
+        result(mode.clearTitle || 'BOSS BEATEN!', C.yellow, mode.clearLines || ['THE BOT BRUTE IS A PERSON AGAIN.', 'THE GRASSY FIELDS ARE CLEAR!'],
+          mode.finale ? [{ label: 'CONTINUE', action: () => onExit('ending') }]
+            : [{ label: 'CONTINUE', action: () => onExit('next') }, { label: 'MAP', action: () => onExit('map') }]);
       } else if (wins.bot >= BOSS_ROUNDS_TO_WIN) {
-        result('YOU LOSE', C.white, ['THE BOT BRUTE WON 2 ROUNDS.', 'TRY THE BOSS AGAIN.'],
+        result('YOU LOSE', C.white, [`${bot.name} WON 2 ROUNDS.`, 'TRY THE BOSS AGAIN.'],
           [{ label: 'TRY AGAIN', action: () => onExit('again') }, { label: 'MAP', action: () => onExit('map') }]);
       } else {
         nextRound();
@@ -993,6 +1093,18 @@
 
       updateFighter(player, bot);
       updateFighter(bot, player);
+      if (glitchy && live && bot.isBot) bot.tpT = (bot.tpT ?? 200) - 1;
+      if (glitchy && live && bot.isBot && ['idle', 'walk'].includes(bot.state) && hittable(player)) {
+        if (bot.tpT <= 0) {
+          bot.teleports = (bot.teleports || 0) + 1;
+          sparks(bot.x, GROUND - 14, 10, [C.purple, C.cyan, C.white]);
+          bot.x = clamp(player.x - player.facing * 16, WALL_L, WALL_R);
+          bot.facing = player.x > bot.x ? 1 : -1;
+          sparks(bot.x, GROUND - 14, 10, [C.purple, C.cyan, C.white]);
+          glitchBurst = 10;
+          bot.tpT = 200 + Math.floor(rand() * 220);
+        }
+      }
       pushApart();
       faceEachOther();
 
@@ -1035,14 +1147,29 @@
     const stage = document.createElement('canvas');
     stage.width = W;
     stage.height = H;
-    buildStage(stage.getContext('2d'));
+    const stageId = mode.stage || 'grassy';
+    buildStage(stage.getContext('2d'), stageId);
+
+    function buildStage(g, id) {
+      if (id === 'dojo') buildDojo(g);
+      else if (id === 'temple') buildTemple(g);
+      else buildFields(g, id === 'dusk');
+    }
 
     // The Grassy Fields, with the Ninja's small temple on the hill.
-    function buildStage(g) {
-      const bands = ['#41a6f6', '#41a6f6', '#52b6f6', '#63c6f6', '#73d6f6', '#73eff7'];
+    // The finale's "dusk" version has a red evening sky and darker grass.
+    function buildFields(g, dusk) {
+      const bands = dusk ? ['#1a1c2c', '#29366f', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75']
+        : ['#41a6f6', '#41a6f6', '#52b6f6', '#63c6f6', '#73d6f6', '#73eff7'];
       bands.forEach((col, k) => { g.fillStyle = col; g.fillRect(0, k * 14, W, 14); });
+      if (dusk) {
+        // A big red moon over the fields.
+        g.fillStyle = '#ef7d57';
+        for (let y = -9; y <= 9; y++) for (let x = -9; x <= 9; x++) if (x * x + y * y <= 81) g.fillRect(60 + x, 30 + y, 1, 1);
+        g.fillStyle = '#b13e53'; g.fillRect(55, 27, 3, 2); g.fillRect(63, 33, 2, 2);
+      }
       // Far hills.
-      g.fillStyle = C.darkGreen;
+      g.fillStyle = dusk ? '#29366f' : C.darkGreen;
       for (let x = 0; x < W; x++) {
         const h = 22 + Math.round(Math.sin(x / 23) * 6 + Math.sin(x / 9) * 2);
         g.fillRect(x, 84 - h + 22, 1, h + 10);
@@ -1064,16 +1191,16 @@
       g.fillRect(tx + 13, ty - 4, 2, 2);
       g.fillStyle = C.dark; g.fillRect(tx - 2, ty + 22, 32, 2);
       // Near hills.
-      g.fillStyle = C.green;
+      g.fillStyle = dusk ? C.darkGreen : C.green;
       for (let x = 0; x < W; x++) {
         const h = 14 + Math.round(Math.sin(x / 31 + 1) * 5);
         g.fillRect(x, GROUND - h, 1, h);
       }
       // Ground: grass on top of dirt.
-      g.fillStyle = C.green; g.fillRect(0, GROUND, W, 4);
-      g.fillStyle = '#a7f070';
+      g.fillStyle = dusk ? C.darkGreen : C.green; g.fillRect(0, GROUND, W, 4);
+      g.fillStyle = dusk ? C.green : '#a7f070';
       for (let x = 0; x < W; x += 7) g.fillRect(x + (x % 3), GROUND, 2, 1);
-      g.fillStyle = C.darkGreen; g.fillRect(0, GROUND + 4, W, 6);
+      g.fillStyle = dusk ? C.dark : C.darkGreen; g.fillRect(0, GROUND + 4, W, 6);
       g.fillStyle = C.dark;
       for (let x = 3; x < W; x += 11) g.fillRect(x, GROUND + 6 + (x % 3), 2, 2);
       // Flowers in the grass.
@@ -1082,15 +1209,116 @@
       });
     }
 
-    const clouds = [[20, 14, 26], [110, 24, 18], [180, 10, 30]];
-
-    function drawClouds() {
-      ctx.fillStyle = C.white;
-      for (const c of clouds) {
-        const x = ((c[0] + frame * 0.05) % (W + 40)) - 40;
-        ctx.fillRect(Math.round(x), c[1], c[2], 4);
-        ctx.fillRect(Math.round(x) + 4, c[1] - 3, c[2] - 10, 3);
+    // The Dojo: wooden walls, paper screens, a red banner and a plank floor.
+    function buildDojo(g) {
+      g.fillStyle = '#5a3a26'; g.fillRect(0, 0, W, GROUND);
+      // Paper screens between wooden posts.
+      for (let x = 6; x < W; x += 50) {
+        g.fillStyle = '#f4e4c1'; g.fillRect(x, 22, 40, 66);
+        g.fillStyle = '#c9b48e';
+        for (let k = 1; k < 4; k++) g.fillRect(x + k * 10, 22, 1, 66);
+        for (let k = 1; k < 6; k++) g.fillRect(x, 22 + k * 11, 40, 1);
+        g.fillStyle = '#3b2416'; g.fillRect(x - 3, 16, 3, GROUND - 16); g.fillRect(x + 40, 16, 3, GROUND - 16);
       }
+      // Ceiling beam and a red banner with a white circle.
+      g.fillStyle = '#3b2416'; g.fillRect(0, 12, W, 6);
+      g.fillStyle = C.red; g.fillRect(114, 18, 28, 40);
+      g.fillStyle = '#5d275d'; g.fillRect(114, 56, 28, 2);
+      g.fillStyle = C.white;
+      for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (x * x + y * y <= 36 && x * x + y * y >= 12) g.fillRect(128 + x, 36 + y, 1, 1);
+      // Weapon rack and a low wall rail.
+      g.fillStyle = '#3b2416'; g.fillRect(0, 92, W, 3);
+      g.fillStyle = '#a0632c'; g.fillRect(0, 95, W, GROUND - 95);
+      // Plank floor.
+      g.fillStyle = '#a0632c'; g.fillRect(0, GROUND, W, 10);
+      g.fillStyle = '#7a4a2a';
+      g.fillRect(0, GROUND, W, 1); g.fillRect(0, GROUND + 5, W, 1);
+      for (let x = 0; x < W; x += 24) { g.fillRect(x, GROUND + 1, 1, 4); g.fillRect(x + 12, GROUND + 6, 1, 4); }
+    }
+
+    // The Cherry Blossom Temple: a pink sunset, blossom trees and a red gate.
+    function buildTemple(g) {
+      const bands = ['#5d275d', '#b13e53', '#ef7d57', '#f4a0a0', '#ffcd75', '#ffe6b0'];
+      bands.forEach((col, k) => { g.fillStyle = col; g.fillRect(0, k * 14, W, 14); });
+      // Purple mountains.
+      g.fillStyle = '#5d275d';
+      for (let x = 0; x < W; x++) {
+        const h = 26 + Math.round(Math.abs(Math.sin(x / 40)) * 22);
+        g.fillRect(x, 92 - h, 1, h + 20);
+      }
+      // The temple roof up on the hill.
+      const tx = 150;
+      g.fillStyle = C.night; g.fillRect(tx - 6, 54, 56, 4); g.fillRect(tx, 48, 44, 4); g.fillRect(tx + 10, 43, 24, 4);
+      g.fillStyle = C.red; [tx + 2, tx + 14, tx + 28, tx + 40].forEach((px) => g.fillRect(px, 58, 3, 30));
+      g.fillStyle = '#f4e4c1'; g.fillRect(tx + 5, 60, 9, 26); g.fillRect(tx + 17, 60, 11, 26); g.fillRect(tx + 31, 60, 9, 26);
+      // Red torii gate on the left.
+      g.fillStyle = C.red; g.fillRect(14, 50, 52, 4); g.fillRect(20, 58, 40, 3); g.fillRect(24, 54, 4, GROUND - 54); g.fillRect(52, 54, 4, GROUND - 54);
+      g.fillStyle = C.night; g.fillRect(12, 48, 56, 2);
+      // Blossom trees.
+      [[96, 70], [222, 66], [6, 80]].forEach(([x, y]) => {
+        g.fillStyle = '#5a3a26'; g.fillRect(x + 8, y, 4, GROUND - y);
+        for (const [dx, dy, r] of [[0, 0, 9], [12, -4, 10], [22, 2, 8], [8, -12, 8]]) {
+          for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) {
+            if (xx * xx + yy * yy > r * r) continue;
+            // Speckled blossoms: a little hash picks white, light pink or pink.
+            const h = ((x + dx + xx) * 73 + (y + dy + yy) * 151) % 11;
+            g.fillStyle = h === 0 ? '#ffffff' : h < 4 ? '#f4a0c8' : yy > r / 2 ? '#e070a8' : '#ff8fc0';
+            g.fillRect(x + dx + xx, y - 6 + dy + yy, 1, 1);
+          }
+        }
+      });
+      // Stone path.
+      g.fillStyle = '#94b0c2'; g.fillRect(0, GROUND, W, 10);
+      g.fillStyle = '#566c86';
+      g.fillRect(0, GROUND, W, 1);
+      for (let x = 0; x < W; x += 18) { g.fillRect(x, GROUND + 1, 1, 9); g.fillRect(x + 9, GROUND + 5, 1, 1); }
+    }
+
+    const clouds = [[20, 14, 26], [110, 24, 18], [180, 10, 30]];
+    const petals = Array.from({ length: 22 }, (_, k) => ({ x: (k * 47) % W, y: (k * 29) % GROUND, s: 0.2 + (k % 5) * 0.08 }));
+
+    // Moving things in the background of each stage.
+    function drawAmbient() {
+      if (stageId === 'grassy' || stageId === 'dusk') {
+        ctx.fillStyle = stageId === 'dusk' ? '#5d275d' : C.white;
+        for (const c of clouds) {
+          const x = ((c[0] + frame * 0.05) % (W + 40)) - 40;
+          ctx.fillRect(Math.round(x), c[1], c[2], 4);
+          ctx.fillRect(Math.round(x) + 4, c[1] - 3, c[2] - 10, 3);
+        }
+      }
+      if (stageId === 'dusk') {
+        // Embers drifting up.
+        ctx.fillStyle = C.orange;
+        for (const p of petals) ctx.fillRect(Math.round((p.x + Math.sin(frame / 40 + p.y) * 6 + W) % W), Math.round(GROUND - ((p.y + frame * p.s) % GROUND)), 1, 1);
+      }
+      if (stageId === 'temple') {
+        // Petals falling.
+        for (const p of petals) {
+          const x = Math.round((p.x + frame * p.s * 0.6 + Math.sin(frame / 30 + p.y) * 4) % W);
+          const y = Math.round((p.y + frame * p.s) % GROUND);
+          ctx.fillStyle = (p.x + p.y) % 2 ? '#ff8fc0' : C.white;
+          ctx.fillRect(x, y, 2, 1);
+        }
+      }
+      if (stageId === 'dojo') {
+        // Hanging lanterns that flicker a little.
+        [[40, 26], [216, 26]].forEach(([x, y], k) => {
+          const on = (frame + k * 17) % 90 > 3;
+          ctx.fillStyle = C.night; ctx.fillRect(x + 2, 18, 1, y - 18);
+          ctx.fillStyle = on ? C.orange : C.red; ctx.fillRect(x, y, 6, 8);
+          ctx.fillStyle = on ? C.yellow : C.orange; ctx.fillRect(x + 1, y + 2, 4, 4);
+        });
+      }
+    }
+
+    // Glitch Mode: flickering colors and screen tearing.
+    let glitchBurst = 0;
+    function drawGlitch() {
+      if (!glitchy) return;
+      if (frame % 150 === 0) glitchBurst = 16;
+      if (glitchBurst > 0) glitchBurst--;
+      glitchFx(ctx, glitchBurst > 0 ? 0.8 : 0.12);
     }
 
     function drawFighter(f) {
@@ -1104,13 +1332,24 @@
       if (f.isBot && (f.state === 'convert' || f.state === 'sleep')) {
         const t = f.state === 'sleep' ? 1 : Math.min(1, f.st / 90);
         const lying = { ...poseFor('down'), face: 'sleep' };
-        if (t < 1) drawPose(ctx, f.id, poseFor('down'), sx, sy, { flip, alpha: 1 - t });
-        drawPose(ctx, `person-${f.shirt}`, lying, sx, sy, { flip, alpha: t });
+        if (t < 1) drawPose(ctx, f.rid, poseFor('down'), sx, sy, { flip, alpha: 1 - t });
+        // Bosses turn back into themselves; ordinary bots into a person.
+        drawPose(ctx, f.botForm ? f.id : `person-${f.shirt}`, lying, sx, sy, { flip, alpha: t });
         return;
       }
       if (f.hidden) return;
       const blink = f.invuln > 0 && Math.floor(f.invuln / 3) % 2;
-      drawPose(ctx, f.id, f.pose, sx, sy, { flip, alpha: blink ? 0.5 : 1 });
+      drawPose(ctx, f.rid, f.pose, sx, sy, { flip, alpha: blink ? 0.5 : 1 });
+      if (f.fist) {
+        // The flying rocket fist.
+        const fx = Math.round(f.fist.x);
+        const fy = Math.round(GROUND - f.fist.y);
+        ctx.fillStyle = C.night; ctx.fillRect(fx - 3, fy - 3, 6, 6);
+        ctx.fillStyle = C.grey; ctx.fillRect(fx - 2, fy - 2, 4, 4);
+        ctx.fillStyle = C.white; ctx.fillRect(fx - 2, fy - 2, 2, 1);
+        ctx.fillStyle = frame % 4 < 2 ? C.orange : C.yellow;
+        ctx.fillRect(fx - f.fist.dir * 5 - 1, fy - 1, 3, 2);
+      }
     }
 
     function drawBar(f, bar, label) {
@@ -1144,7 +1383,7 @@
       drawText(player.name, 5, 4, C.night); drawText(player.name, 4, 3, player.team);
       const bn = !isQuick ? bot.name : twoPlayer ? `P2 ${bot.name}` : `CPU ${bot.name}`;
       drawText(bn, W - 4 - textWidth(bn) + 1, 4, C.night); drawText(bn, W - 4 - textWidth(bn), 3, C.white);
-      const where = isLevel ? `LEVEL ${mode.level}  ENEMY ${enemyIndex + 1}/${LEVEL_ENEMIES}` : isBoss ? `BOSS  ROUND ${round}`
+      const where = isLevel ? `${label}  ENEMY ${enemyIndex + 1}/${enemiesTotal}` : isBoss ? `${label}  ROUND ${round}`
         : twoPlayer ? 'QUICK FIGHT' : `QUICK  ${difficulty.toUpperCase()}`;
       textC(where, W / 2, 3, C.yellow);
       if (isBoss) {
@@ -1252,7 +1491,7 @@
         ctx.translate(Math.round((rand() - 0.5) * shakeMag * 2), Math.round((rand() - 0.5) * shakeMag * 2));
       }
       ctx.drawImage(stage, 0, 0);
-      drawClouds();
+      drawAmbient();
 
       for (const z of sleepers) drawPose(ctx, `person-${z.shirt}`, { ...poseFor('down'), face: 'sleep' }, z.x, GROUND, { flip: z.facing === -1 });
       for (const g of ghosts) drawPose(ctx, g.id, g.pose, g.x, GROUND - g.y, { flip: g.facing === -1, alpha: g.life / 24 });
@@ -1282,14 +1521,15 @@
       }
       ctx.restore();
 
+      drawGlitch();
       drawHud();
 
       if (phase === 'enter') {
-        textC(`ENEMY ${enemyIndex + 1} / ${LEVEL_ENEMIES}`, W / 2, 44, C.white, 2, C.red);
+        textC(`ENEMY ${enemyIndex + 1} / ${enemiesTotal}`, W / 2, 44, C.white, 2, C.red);
       } else if (phase === 'intro') {
         let top;
-        if (isBoss) top = round === 1 ? 'BOSS: BOT BRUTE' : `ROUND ${round}`;
-        else if (isLevel) top = `LEVEL ${mode.level}  ENEMY ${enemyIndex + 1}/${LEVEL_ENEMIES}`;
+        if (isBoss) top = round === 1 ? `BOSS: ${bot.name}` : `ROUND ${round}`;
+        else if (isLevel) top = `${label}  ENEMY ${enemyIndex + 1}/${enemiesTotal}`;
         if (firstIntro) {
           ctx.fillStyle = 'rgba(26, 28, 44, 0.7)';
           ctx.fillRect(20, 26, W - 40, 80);
@@ -1375,5 +1615,26 @@
     return { update, draw, keydown, keyup, pointer, debug };
   }
 
-  window.StickFight = { create, AI_LEVELS };
+  // Screen-tearing glitch effect drawn over whatever is on the canvas.
+  function glitchFx(ctx, amount) {
+    const cv = ctx.canvas;
+    const n = Math.ceil(amount * 8);
+    for (let i = 0; i < n; i++) {
+      const y = Math.floor(rand() * H);
+      const h = 1 + Math.floor(rand() * 8);
+      const dx = Math.round((rand() - 0.5) * amount * 36);
+      ctx.drawImage(cv, 0, y, W, h, dx, y, W, h);
+    }
+    if (rand() < amount * 0.6) {
+      ctx.fillStyle = rand() < 0.5 ? 'rgba(255, 79, 216, 0.28)' : 'rgba(115, 239, 247, 0.28)';
+      ctx.fillRect(0, Math.floor(rand() * H), W, 2 + Math.floor(rand() * 18));
+    }
+    const blocks = Math.floor(amount * 10);
+    for (let i = 0; i < blocks; i++) {
+      ctx.fillStyle = ['#ff4fd8', '#73eff7', '#f4f4f4', '#a7f070'][Math.floor(rand() * 4)];
+      ctx.fillRect(Math.floor(rand() * W), Math.floor(rand() * H), 2 + Math.floor(rand() * 6), 1 + Math.floor(rand() * 2));
+    }
+  }
+
+  window.StickFight = { create, AI_LEVELS, glitchFx };
 })();

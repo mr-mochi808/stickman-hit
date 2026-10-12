@@ -156,6 +156,23 @@
       bK: [12, 23], bF: [10, 26], bE: [8, 15], bH: [6, 17], fE: [12, 10], fH: [14, 8],
       face: 'angry',
     }),
+    // Samurai guard stance for Counter Slash: blade held level above the head.
+    guard: pose({
+      head: [13, 7], neck: [13, 12], fE: [17, 11], fH: [19, 8], bE: [11, 12], bH: [15, 8],
+      bK: [10, 23], bF: [8, 26], fK: [17, 23], fF: [19, 26],
+      face: 'angry', sword: [1, -0.05],
+    }),
+    slash: pose({
+      head: [16, 7], neck: [15, 12], bE: [16, 15], bH: [20, 13], fE: [19, 14], fH: [22, 13],
+      bK: [10, 23], bF: [7, 26], fK: [18, 23], fF: [21, 26],
+      face: 'angry', sword: [1, 0.15], slash: true,
+    }),
+    // Cyborg with his fist fired off.
+    rocket: pose({
+      head: [15, 6], neck: [15, 12], fE: [20, 12], fH: [22, 12],
+      bK: [11, 23], bF: [9, 26], fK: [17, 23], fF: [20, 26],
+      face: 'angry', fistGone: true,
+    }),
     flyKick: pose({
       head: [9, 9], neck: [11, 13], hip: [15, 16], fK: [20, 16], fF: [26, 16],
       bK: [14, 20], bF: [10, 21], bE: [8, 13], bH: [6, 15], fE: [14, 11], fH: [16, 9],
@@ -402,7 +419,7 @@
     },
     frontArm(g, p) {
       line(g, p.neck, p.fE, 'S', 2);
-      if (p.rocket) {
+      if (p.rocket || p.fistGone) {
         // Rocket Punch: the forearm stays, the fist flies.
         rect(g, p.fE[0] + 1, p.fE[1], 2, 2, 'k');
         return;
@@ -412,6 +429,7 @@
     },
     hands(g, p) {
       fist(g, p.bH, 'D');
+      if (p.fistGone) return;
       if (p.rocket) {
         const [x, y] = [Math.min(SIZE - 2, p.fH[0] + 2), p.fH[1]];
         ball(g, [x, y], 's', 'w', 'S');
@@ -597,6 +615,19 @@
   // The Ninja fights with fast kicks, like Fang from Brawl Stars.
   const ANIM_OVERRIDES = {
     // Glitch: break apart, reappear behind the enemy, strike.
+    // Boxer: Haymaker, a huge charged punch.
+    boxer: {
+      special: { keys: [K('heavyWind', 6), K('heavyWind', 14, { face: 'angry' }), K('heavy', 3), K('heavy', 14), K('idle1', 8)] },
+    },
+    // Samurai: hold the guard; if hit, Counter Slash.
+    samurai: {
+      special: { keys: [K('guard', 5), K('guard', 55)] },
+      counter: { keys: [K('guard', 2), K('slash', 4), K('slash', 14), K('idle1', 8)] },
+    },
+    // Cyborg: fire the fist and wait for it to come back.
+    cyborg: {
+      special: { keys: [K('heavyWind', 8), K('rocket', 4), K('rocket', 400)] },
+    },
     glitch: {
       special: { keys: [K('duck', 4), K('idle1', 8, { teleport: true, face: 'angry' }), K('idle1', 4, { teleport: true, face: 'angry' }), K('heavyWind', 6), K('heavy', 4), K('heavy', 8), K('idle1', 6)] },
     },
@@ -639,11 +670,25 @@
   const ease = (t) => t * t * (3 - 2 * t);
 
   // ---- Rendering & cache --------------------------------------------------
+  // Bot form: same fighter, drained to Cyborg's gray, with red eyes.
+  const BOT_TINT = {
+    k: 'S', D: 'D', w: 's', s: 'S', S: 'D', r: 'S', R: 'D', o: 's', y: 's',
+    b: 'S', B: 'D', c: 's', a: 'r', g: 'S', m: 's',
+  };
+
   function renderGrid(id, p) {
     const rounded = { ...p };
     for (const j of JOINTS) {
       if (j === 'sword') continue;
       rounded[j] = [Math.round(p[j][0]), Math.round(p[j][1])];
+    }
+    if (id.endsWith('-bot')) {
+      const g = body(rounded, GEAR[id.slice(0, -4)]);
+      const [cx, cy] = rounded.head;
+      for (const row of g) for (let x = 0; x < row.length; x++) if (row[x] !== '.') row[x] = BOT_TINT[row[x]] || row[x];
+      // Cyborg's red chip.
+      if (g[cy - 3]) g[cy - 3][cx - 2] = 'r';
+      return g;
     }
     return body(rounded, GEAR[id]);
   }
@@ -653,7 +698,7 @@
     const key = id + JSON.stringify(JOINTS.map((j) => (j === 'sword'
       ? [Math.round(p[j][0] * 4), Math.round(p[j][1] * 4)]
       : [Math.round(p[j][0]), Math.round(p[j][1])])))
-      + p.face + (p.slash ? 's' : '') + (p.rocket ? 'r' : '') + (p.teleport ? 't' : '');
+      + p.face + (p.slash ? 's' : '') + (p.rocket ? 'r' : '') + (p.teleport ? 't' : '') + (p.fistGone ? 'f' : '');
     let c = cache.get(key);
     if (c) return c;
     if (cache.size > 4000) cache.clear();
