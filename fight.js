@@ -1160,7 +1160,20 @@
     stage.width = W;
     stage.height = H;
     const stageId = mode.stage || 'grassy';
-    buildStage(stage.getContext('2d'), stageId);
+    // The background lives in normal memory (willReadFrequently) so it can't be wiped.
+    const stageCtx = stage.getContext('2d', { willReadFrequently: true });
+    buildStage(stageCtx, stageId);
+
+    // If the browser ever wipes the background anyway, draw it again.
+    function checkStage() {
+      let alpha = 255;
+      try { alpha = stageCtx.getImageData(2, GROUND + 6, 1, 1).data[3]; } catch (e) { /* ignore */ }
+      if (alpha === 0) {
+        buildStage(stageCtx, stageId);
+        window.Rig.clearCache();
+      }
+    }
+    stage.addEventListener?.('contextrestored', () => { buildStage(stageCtx, stageId); window.Rig.clearCache(); });
 
     function buildStage(g, id) {
       if (id === 'dojo') buildDojo(g);
@@ -1502,6 +1515,7 @@
       if (shakeT > 0 && shakeMag > 0) {
         ctx.translate(Math.round((rand() - 0.5) * shakeMag * 2), Math.round((rand() - 0.5) * shakeMag * 2));
       }
+      if (frame % 30 === 0) checkStage();
       ctx.drawImage(stage, 0, 0);
       drawAmbient();
 
@@ -1616,6 +1630,8 @@
       get phase() { return phase; },
       get timeLeft() { return timeLeft; },
       get freeze() { return freeze; },
+      // Test hook: wipe the background the way a browser does when it loses it.
+      wipeStage() { stageCtx.clearRect(0, 0, W, H); },
       skipIntro() { setPhase('fight'); },
       setTime(s) { timeLeft = s * FPS; },
       setAI(on) { aiOn = on; },

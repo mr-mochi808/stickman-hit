@@ -701,11 +701,17 @@
       + p.face + (p.slash ? 's' : '') + (p.rocket ? 'r' : '') + (p.teleport ? 't' : '') + (p.fistGone ? 'f' : '');
     let c = cache.get(key);
     if (c) return c;
-    if (cache.size > 4000) cache.clear();
+    // Keep the cache small: drop the oldest drawings when it fills up.
+    if (cache.size > 1200) {
+      let n = 0;
+      for (const k of cache.keys()) { cache.delete(k); if (++n >= 400) break; }
+    }
     const g = renderGrid(id, p);
     c = document.createElement('canvas');
     c.width = SIZE; c.height = SIZE;
-    const cx = c.getContext('2d');
+    // willReadFrequently keeps these small canvases in normal memory, so the browser
+    // never wipes them when graphics memory runs low.
+    const cx = c.getContext('2d', { willReadFrequently: true });
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) {
         if (g[y][x] === '.') continue;
@@ -850,5 +856,8 @@
   const BOT_SPRITES = Object.fromEntries(['bot', 'brute'].map((id) => [id,
     Object.fromEntries(POSE_ORDER.map((n) => [n, renderGrid(id, n === 'attack' ? poseFor('heavy') : poseFor(MENU_POSES[n])).map((row) => row.join(''))]))]));
 
-  window.Rig = { POSES, SHIRTS, BOT_SPRITES, anim, poseFor, lerpPose, ease, drawPose };
+  // Forget every saved drawing (they are redrawn the next time they are needed).
+  const clearCache = () => cache.clear();
+
+  window.Rig = { POSES, SHIRTS, BOT_SPRITES, anim, poseFor, lerpPose, ease, drawPose, clearCache };
 })();

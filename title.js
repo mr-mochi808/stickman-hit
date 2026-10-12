@@ -8,6 +8,11 @@
   const canvas = document.getElementById('screen');
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
+  // If the browser resets the screen, redraw the saved fighter drawings too.
+  canvas.addEventListener('contextrestored', () => {
+    ctx.imageSmoothingEnabled = false;
+    window.Rig?.clearCache();
+  });
 
   const C = {
     night: '#1a1c2c',
