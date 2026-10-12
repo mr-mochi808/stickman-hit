@@ -1,11 +1,14 @@
-// Stickman Hit - 8-bit sound effects and music, made live with the Web Audio API.
-// From docs/game-design.md: 8-bit effects, and fast 8-bit music that starts chill
-// and gets more intense with each place, plus a glitchy track for Glitch Mode.
+// Stickman Hit - sound effects and music, made live with the Web Audio API.
+// Sound effects are 8-bit (docs/game-design.md). The music is smooth "electronic
+// focus" style: warm pads, a pumping sub bass, soft plucks with echo, and a steady
+// beat. It starts chill and builds with each place, with a glitchy track for
+// Glitch Mode.
 (() => {
   // ---- Music data -----------------------------------------------------------
   // Each track loops 4 bars of 16 steps. Melodies are scale degrees from the key's
   // root: '0'-'9' then 'a'=10, 'b'=11 ... '.' is a rest and '-' holds the note.
   // Bass: R root, F fifth, O octave. Drums: x = hit.
+  // Layers switch on as the game goes on: pad, bass, beat, hats, arp, open hats.
   const SCALES = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
@@ -13,61 +16,61 @@
   };
 
   const TRACKS = {
-    // Menus: slow and chill.
+    // Menus: just pads, a soft pluck and a heartbeat kick.
     title: {
-      bpm: 92, root: 57, scale: 'minor', prog: [0, 5, 3, 4],
+      bpm: 100, root: 57, scale: 'minor', prog: [0, 5, 3, 4],
       lead: ['7---9---b---9---', 'c---b---9---7---', 'a---9---7---5---', '4---6---8---6---'],
-      leadWave: 'triangle', leadVol: 0.16,
-      bass: 'R-------F-------', bassWave: 'triangle',
-      kick: 'x.......x.......', snare: '................', hat: '....x.......x...',
+      leadVol: 0.07, leadCut: 1400,
+      bass: 'R-------R-------',
+      kick: 'x.......x.......', clap: '................', hat: '................', open: '................',
     },
-    // Place 1: Grassy Fields. Bright and bouncy.
+    // Place 1: Grassy Fields. Calm and bright, a steady beat.
     grassy: {
-      bpm: 120, root: 60, scale: 'major', prog: [0, 4, 5, 3],
+      bpm: 116, root: 60, scale: 'major', prog: [0, 4, 5, 3],
       lead: ['b-9-7-9-b---c-b-', '8-b-d-b-8---7-8-', 'c-e-c-9-7---9-c-', 'a-c-e-c-a-9-8-7-'],
-      leadWave: 'square', leadVol: 0.1,
-      bass: 'R.O.R.O.R.O.F.O.', bassWave: 'triangle',
-      kick: 'x.......x.......', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.',
+      leadVol: 0.07, leadCut: 2200,
+      bass: 'R.....R.R.....F.',
+      kick: 'x...x...x...x...', clap: '....x.......x...', hat: '..x...x...x...x.', open: '................',
     },
-    // Place 2: the Dojo. Faster, punchier.
+    // Place 2: the Dojo. Busier hats and a bouncier bass.
     dojo: {
-      bpm: 136, root: 62, scale: 'dorian', prog: [0, 6, 5, 6],
+      bpm: 122, root: 62, scale: 'dorian', prog: [0, 6, 5, 6],
       lead: ['7.7.9.7.b.9.7.6.', '6.6.8.6.a.8.6.4.', '5.5.7.5.9.7.5.4.', '6.8.a.c.a.8.6.4-'],
-      leadWave: 'square', leadVol: 0.1,
-      bass: 'R.RO..R.R.RO..F.', bassWave: 'square',
-      kick: 'x.....x.x.....x.', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.',
+      leadVol: 0.07, leadCut: 2600,
+      bass: 'R..R..R.R..O..F.',
+      kick: 'x...x...x...x...', clap: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.', open: '................',
     },
     // Place 3: the Cherry Blossom Temple. A rolling arpeggio joins in.
     temple: {
-      bpm: 148, root: 64, scale: 'minor', prog: [0, 5, 6, 4],
+      bpm: 126, root: 64, scale: 'minor', prog: [0, 5, 6, 4],
       lead: ['b-a-9-7-9-b-e---', 'c-b-a-9-a-c-e---', 'd-c-b-a-b-d-f---', 'b-d-f-d-b-a-9-8-'],
-      leadWave: 'square', leadVol: 0.09, arp: true,
-      bass: 'R.R.O.R.R.R.O.F.', bassWave: 'square',
-      kick: 'x...x...x...x...', snare: '....x.......x..x', hat: 'xxxxxxxxxxxxxxxx',
+      leadVol: 0.065, leadCut: 2800, arp: true,
+      bass: 'R..R..R.R..R..F.',
+      kick: 'x...x...x...x...', clap: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.', open: '..x...x...x...x.',
     },
-    // Place 4: back to the Fields for Cyborg. Fast and intense.
+    // Place 4: back to the Fields for Cyborg. Driving and intense.
     finale: {
-      bpm: 164, root: 57, scale: 'minor', prog: [0, 0, 5, 6],
+      bpm: 132, root: 57, scale: 'minor', prog: [0, 0, 5, 6],
       lead: ['7979b97979b9cb97', '7979b97979b9e-c-', '5757957575979c9-', '6868a8686a8ad-b-'],
-      leadWave: 'sawtooth', leadVol: 0.07, arp: true,
-      bass: 'RRORRRORRRORFFOF', bassWave: 'sawtooth',
-      kick: 'x...x...x...x.x.', snare: '....x.......x.xx', hat: 'xxxxxxxxxxxxxxxx',
+      leadVol: 0.055, leadCut: 3400, arp: true,
+      bass: 'R.RR.RR.R.RR.RF.',
+      kick: 'x...x...x...x...', clap: '....x.......x..x', hat: 'xxxxxxxxxxxxxxxx', open: '..x...x...x...x.',
     },
     // Glitch Mode: the temple tune, but it stutters, jumps octaves and drops out.
     glitch: {
-      bpm: 150, root: 61, scale: 'minor', prog: [0, 5, 6, 4], glitchy: true,
+      bpm: 128, root: 61, scale: 'minor', prog: [0, 5, 6, 4], glitchy: true,
       lead: ['b-a-9-7-9-b-e---', 'c-b-a-9-a-c-e---', 'd-c-b-a-b-d-f---', 'b-d-f-d-b-a-9-8-'],
-      leadWave: 'square', leadVol: 0.09, arp: true,
-      bass: 'R.R.O.R.R.R.O.F.', bassWave: 'sawtooth',
-      kick: 'x..x..x.x..x..x.', snare: '....x.......x...', hat: 'x.xxx.xxx.xxx.xx',
+      leadVol: 0.065, leadCut: 3000, arp: true,
+      bass: 'R..R..R.R..R..F.',
+      kick: 'x...x..xx...x...', clap: '....x.......x...', hat: 'x.xxx.xxx.xxx.xx', open: '......x.......x.',
     },
     // The ending: everyone wakes up.
     ending: {
-      bpm: 112, root: 65, scale: 'major', prog: [0, 3, 4, 0],
+      bpm: 110, root: 65, scale: 'major', prog: [0, 3, 4, 0],
       lead: ['7-9-b-e---b-e---', 'a-c-e-h---e-c---', 'b-d-f-i---f-d---', 'e---b---9---7---'],
-      leadWave: 'square', leadVol: 0.1, arp: true,
-      bass: 'R...F...O...F...', bassWave: 'triangle',
-      kick: 'x.......x.......', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.',
+      leadVol: 0.07, leadCut: 2400, arp: true,
+      bass: 'R.....R.R.....F.',
+      kick: 'x...x...x...x...', clap: '....x.......x...', hat: '..x...x...x...x.', open: '................',
     },
   };
 
@@ -94,54 +97,177 @@
     return buf;
   }
 
+  function env(g, t, vol, attack, dur, release) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + attack);
+    g.gain.setValueAtTime(vol, t + Math.max(attack, dur - release));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  }
+
+  // A plain oscillator note (used by the 8-bit sound effects).
   function tone(ac, dest, t, f, dur, { wave = 'square', vol = 0.2, slideTo, attack = 0.004, release = 0.04 } = {}) {
     const o = ac.createOscillator();
     const g = ac.createGain();
     o.type = wave;
     o.frequency.setValueAtTime(f, t);
     if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + attack);
-    g.gain.setValueAtTime(vol, t + Math.max(attack, dur - release));
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    env(g, t, vol, attack, dur, release);
     o.connect(g).connect(dest);
     o.start(t);
     o.stop(t + dur + 0.02);
   }
 
-  function noise(ac, dest, t, dur, { vol = 0.2, hp = 1000, lp = 18000 } = {}) {
+  function noise(ac, dest, t, dur, { vol = 0.2, hp = 1000, lp = 18000, band } = {}) {
     const src = ac.createBufferSource();
     src.buffer = noiseBuffer(ac);
-    const hi = ac.createBiquadFilter();
-    hi.type = 'highpass';
-    hi.frequency.value = hp;
-    const lo = ac.createBiquadFilter();
-    lo.type = 'lowpass';
-    lo.frequency.value = lp;
+    const f1 = ac.createBiquadFilter();
+    f1.type = band ? 'bandpass' : 'highpass';
+    f1.frequency.value = band || hp;
+    if (band) f1.Q.value = 1.2;
+    const f2 = ac.createBiquadFilter();
+    f2.type = 'lowpass';
+    f2.frequency.value = lp;
     const g = ac.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(hi).connect(lo).connect(g).connect(dest);
+    src.connect(f1).connect(f2).connect(g).connect(dest);
     src.start(t, Math.random() * 0.5);
     src.stop(t + dur + 0.02);
   }
 
+  // Soft electronic pluck: two slightly detuned saws through a closing filter.
+  function pluck(ac, dest, t, f, dur, { vol = 0.07, cut = 2400 } = {}) {
+    const flt = ac.createBiquadFilter();
+    flt.type = 'lowpass';
+    flt.Q.value = 3;
+    flt.frequency.setValueAtTime(cut, t);
+    flt.frequency.exponentialRampToValueAtTime(320, t + Math.min(0.35, dur + 0.1));
+    const g = ac.createGain();
+    env(g, t, vol, 0.005, Math.max(0.12, dur), 0.08);
+    for (const cents of [-7, 7]) {
+      const o = ac.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f, t);
+      o.detune.value = cents;
+      o.connect(flt);
+      o.start(t);
+      o.stop(t + Math.max(0.12, dur) + 0.05);
+    }
+    flt.connect(g).connect(dest);
+  }
+
+  // Warm pad chord that fades in and holds for the bar.
+  function pad(ac, dest, t, freqs, dur, vol = 0.03) {
+    const flt = ac.createBiquadFilter();
+    flt.type = 'lowpass';
+    flt.frequency.setValueAtTime(700, t);
+    flt.frequency.linearRampToValueAtTime(1500, t + dur * 0.5);
+    flt.frequency.linearRampToValueAtTime(800, t + dur);
+    const g = ac.createGain();
+    env(g, t, vol, Math.min(0.5, dur * 0.3), dur + 0.25, 0.4);
+    for (const f of freqs) {
+      for (const cents of [-10, 10]) {
+        const o = ac.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        o.detune.value = cents;
+        o.connect(flt);
+        o.start(t);
+        o.stop(t + dur + 0.3);
+      }
+    }
+    flt.connect(g).connect(dest);
+  }
+
+  // Deep sub bass with a little grit on top.
+  function bass(ac, dest, t, f, dur, vol = 0.22) {
+    const g = ac.createGain();
+    env(g, t, vol, 0.008, dur, 0.06);
+    const sub = ac.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = f;
+    sub.connect(g);
+    const grit = ac.createOscillator();
+    grit.type = 'sawtooth';
+    grit.frequency.value = f;
+    const flt = ac.createBiquadFilter();
+    flt.type = 'lowpass';
+    flt.frequency.setValueAtTime(900, t);
+    flt.frequency.exponentialRampToValueAtTime(220, t + Math.min(0.25, dur));
+    const gg = ac.createGain();
+    gg.gain.value = 0.35;
+    grit.connect(flt).connect(gg).connect(g);
+    g.connect(dest);
+    for (const o of [sub, grit]) { o.start(t); o.stop(t + dur + 0.05); }
+  }
+
   const drums = {
-    kick: (ac, d, t, v = 1) => tone(ac, d, t, 150, 0.14, { wave: 'sine', vol: 0.55 * v, slideTo: 42, release: 0.1 }),
+    kick: (ac, d, t, v = 1) => {
+      tone(ac, d, t, 120, 0.32, { wave: 'sine', vol: 0.7 * v, slideTo: 38, release: 0.22 });
+      noise(ac, d, t, 0.012, { vol: 0.12 * v, hp: 2500 });
+    },
+    clap: (ac, d, t, v = 1) => {
+      for (let k = 0; k < 3; k++) noise(ac, d, t + k * 0.011, 0.02, { vol: 0.16 * v, band: 1300 });
+      noise(ac, d, t + 0.03, 0.18, { vol: 0.12 * v, band: 1500 });
+    },
+    hat: (ac, d, t, v = 1) => noise(ac, d, t, 0.025, { vol: 0.045 * v, hp: 9000 }),
+    open: (ac, d, t, v = 1) => noise(ac, d, t, 0.16, { vol: 0.04 * v, hp: 8000 }),
+    // The 8-bit sound effects use a chunkier snare.
     snare: (ac, d, t, v = 1) => { noise(ac, d, t, 0.12, { vol: 0.22 * v, hp: 1200 }); tone(ac, d, t, 190, 0.06, { wave: 'triangle', vol: 0.15 * v }); },
-    hat: (ac, d, t, v = 1) => noise(ac, d, t, 0.035, { vol: 0.07 * v, hp: 7000 }),
   };
 
+  // Echo, reverb and the "pump" (pads and bass duck under each kick).
+  function makeChain(ac, dest, bpm) {
+    const step = 60 / bpm / 4;
+    const input = ac.createGain();
+    input.connect(dest);
+    const delay = ac.createDelay(2);
+    delay.delayTime.value = step * 3;
+    const fb = ac.createGain();
+    fb.gain.value = 0.32;
+    const dlp = ac.createBiquadFilter();
+    dlp.type = 'lowpass';
+    dlp.frequency.value = 2400;
+    const wet = ac.createGain();
+    wet.gain.value = 0.28;
+    input.connect(delay);
+    delay.connect(dlp).connect(fb).connect(delay);
+    dlp.connect(wet).connect(dest);
+    const verb = ac.createConvolver();
+    const len = Math.floor(ac.sampleRate * 1.8);
+    const ir = ac.createBuffer(2, len, ac.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const ch = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2.5;
+    }
+    verb.buffer = ir;
+    const send = ac.createGain();
+    send.gain.value = 0.22;
+    input.connect(send).connect(verb).connect(dest);
+    const pump = ac.createGain();
+    pump.connect(input);
+    const drumBus = ac.createGain();
+    drumBus.connect(dest);
+    const drumSend = ac.createGain();
+    drumSend.gain.value = 0.08;
+    drumBus.connect(drumSend).connect(verb);
+    return { input, pump, drums: drumBus };
+  }
+
   // Schedule one bar of a track onto any audio context (live or offline).
-  function scheduleBar(ac, dest, track, bar, start, boss) {
-    const bpm = track.bpm + (boss ? 10 : 0);
+  function scheduleBar(ac, chain, track, bar, start, boss) {
+    const bpm = track.bpm + (boss ? 6 : 0);
     const step = 60 / bpm / 4;
     const b = bar % 4;
     const chord = track.prog[b];
     const glitch = track.glitchy;
     const rnd = (k) => Math.abs(Math.sin((bar * 16 + k) * 12.9898 + 78.233) * 43758.5453) % 1;
 
-    // Lead melody.
+    // Pad: the chord, held for the whole bar.
+    const chordNotes = [0, 2, 4].map((d) => freq(degreeToMidi(track, chord + d)));
+    pad(ac, chain.pump, start, chordNotes, 16 * step, 0.028);
+
+    // Lead pluck melody.
     const line = track.lead[b];
     for (let k = 0; k < 16; k++) {
       const ch = line[k];
@@ -149,19 +275,19 @@
       let len = 1;
       while (k + len < 16 && line[k + len] === '-') len++;
       let midi = degreeToMidi(track, DEG(ch));
-      let t = start + k * step;
+      const t = start + k * step;
       if (glitch) {
         if (rnd(k) < 0.12) continue; // dropout
         if (rnd(k + 50) < 0.15) midi += rnd(k + 90) < 0.5 ? 12 : -12; // octave jump
         if (rnd(k + 70) < 0.1) { // stutter
-          for (let s = 0; s < 3; s++) tone(ac, dest, t + s * step / 3, freq(midi), step / 3.5, { wave: 'square', vol: track.leadVol });
+          for (let s = 0; s < 3; s++) pluck(ac, chain.input, t + (s * step) / 3, freq(midi), step / 3, { vol: track.leadVol, cut: track.leadCut });
           continue;
         }
       }
-      tone(ac, dest, t, freq(midi), len * step * 0.95, { wave: track.leadWave, vol: track.leadVol, release: 0.05 });
+      pluck(ac, chain.input, t, freq(midi), len * step, { vol: track.leadVol, cut: track.leadCut });
     }
 
-    // Bass.
+    // Sub bass through the pump.
     for (let k = 0; k < 16; k++) {
       const ch = track.bass[k];
       if (ch === '.' || ch === '-') continue;
@@ -169,29 +295,34 @@
       while (k + len < 16 && track.bass[k + len] === '-') len++;
       const deg = chord + (ch === 'F' ? 4 : 0);
       const midi = degreeToMidi(track, deg) - 24 + (ch === 'O' ? 12 : 0);
-      tone(ac, dest, start + k * step, freq(midi), len * step * 0.9, { wave: track.bassWave, vol: track.bassWave === 'sawtooth' ? 0.08 : 0.16 });
+      bass(ac, chain.pump, start + k * step, freq(midi), Math.min(len, 3) * step * 0.9);
     }
 
-    // Arpeggio of the chord (later places and bosses).
+    // Rolling arpeggio (later places and bosses).
     if (track.arp || boss) {
       const notes = [0, 2, 4, 7].map((d) => degreeToMidi(track, chord + d) + 12);
       for (let k = 0; k < 16; k++) {
-        tone(ac, dest, start + k * step, freq(notes[k % 4] + (glitch && rnd(k + 30) < 0.1 ? 1 : 0)), step * 0.7, { wave: 'triangle', vol: 0.05 });
+        pluck(ac, chain.input, start + k * step, freq(notes[(k * 3) % 4] + (glitch && rnd(k + 30) < 0.1 ? 1 : 0)), step * 0.6, { vol: 0.03, cut: 1800 });
       }
     }
 
-    // Drums. Bosses get busier hats.
+    // Drums, plus the pump: pads and bass dip under every kick.
     for (let k = 0; k < 16; k++) {
       const t = start + k * step;
-      if (track.kick[k] === 'x') drums.kick(ac, dest, t);
-      if (track.snare[k] === 'x') drums.snare(ac, dest, t);
-      if (track.hat[k] === 'x' || (boss && k % 2 === 1)) drums.hat(ac, dest, t, k % 4 === 0 ? 1.2 : 0.8);
-      if (glitch && rnd(k + 110) < 0.05) noise(ac, dest, t, step * 2, { vol: 0.1, hp: 300, lp: 3000 });
+      if (track.kick[k] === 'x') {
+        drums.kick(ac, chain.drums, t);
+        chain.pump.gain.setValueAtTime(0.35, t);
+        chain.pump.gain.linearRampToValueAtTime(1, t + step * 2.5);
+      }
+      if (track.clap[k] === 'x') drums.clap(ac, chain.drums, t);
+      if (track.hat[k] === 'x' || (boss && k % 2 === 1)) drums.hat(ac, chain.drums, t, k % 4 === 2 ? 1.2 : 0.8);
+      if (track.open[k] === 'x') drums.open(ac, chain.drums, t);
+      if (glitch && rnd(k + 110) < 0.05) noise(ac, chain.drums, t, step * 2, { vol: 0.08, hp: 300, lp: 3000 });
     }
     return 16 * step;
   }
 
-  // ---- Sound effects ---------------------------------------------------------
+  // ---- Sound effects (8-bit) -------------------------------------------------
   const SFX = {
     punch: (ac, d, t) => { noise(ac, d, t, 0.06, { vol: 0.3, hp: 800, lp: 6000 }); tone(ac, d, t, 220, 0.07, { wave: 'square', vol: 0.15, slideTo: 90 }); },
     kick: (ac, d, t) => { noise(ac, d, t, 0.1, { vol: 0.35, hp: 300, lp: 4000 }); tone(ac, d, t, 160, 0.14, { wave: 'square', vol: 0.2, slideTo: 50 }); },
@@ -201,13 +332,13 @@
     broken: (ac, d, t) => { tone(ac, d, t, 523, 0.08, { wave: 'square', vol: 0.12 }); tone(ac, d, t + 0.08, 392, 0.12, { wave: 'square', vol: 0.12 }); },
     tired: (ac, d, t) => tone(ac, d, t, 200, 0.25, { wave: 'triangle', vol: 0.15, slideTo: 120 }),
     jump: (ac, d, t) => tone(ac, d, t, 300, 0.1, { wave: 'square', vol: 0.06, slideTo: 600 }),
-    slam: (ac, d, t) => { drums.kick(ac, d, t, 1.4); noise(ac, d, t, 0.25, { vol: 0.3, hp: 100, lp: 2500 }); },
+    slam: (ac, d, t) => { drums.snare(ac, d, t, 1.2); tone(ac, d, t, 150, 0.2, { wave: 'sine', vol: 0.6, slideTo: 40 }); noise(ac, d, t, 0.25, { vol: 0.3, hp: 100, lp: 2500 }); },
     // Special charge-up: a quick rising arpeggio.
     special: (ac, d, t) => {
       [392, 523, 659, 784, 1046, 1319].forEach((f, k) => tone(ac, d, t + k * 0.045, f, 0.08, { wave: 'square', vol: 0.1 }));
       tone(ac, d, t, 200, 0.35, { wave: 'sawtooth', vol: 0.06, slideTo: 1200 });
     },
-    bigHit: (ac, d, t) => { drums.kick(ac, d, t, 1.6); noise(ac, d, t, 0.3, { vol: 0.35, hp: 200, lp: 5000 }); },
+    bigHit: (ac, d, t) => { tone(ac, d, t, 150, 0.25, { wave: 'sine', vol: 0.8, slideTo: 40 }); noise(ac, d, t, 0.3, { vol: 0.35, hp: 200, lp: 5000 }); },
     ko: (ac, d, t) => [523, 440, 349, 262, 196].forEach((f, k) => tone(ac, d, t + k * 0.11, f, 0.16, { wave: 'square', vol: 0.13 })),
     // A bot powering down as it collapses.
     collapse: (ac, d, t) => { tone(ac, d, t, 600, 0.6, { wave: 'sawtooth', vol: 0.06, slideTo: 60 }); noise(ac, d, t + 0.1, 0.4, { vol: 0.08, hp: 2000 }); },
@@ -285,13 +416,14 @@
     if (!track) return;
     playing = { ...wanted };
     musicBus = ac.createGain();
-    musicBus.gain.value = ducked ? 0.25 : 0.7;
+    musicBus.gain.value = ducked ? 0.25 : 0.8;
     musicBus.connect(master);
+    const chain = makeChain(ac, musicBus, track.bpm + (playing.boss ? 6 : 0));
     barIndex = 0;
     nextBar = ac.currentTime + 0.1;
     const tick = () => {
       while (nextBar < ac.currentTime + 0.3) {
-        nextBar += scheduleBar(ac, musicBus, track, barIndex, nextBar, playing.boss);
+        nextBar += scheduleBar(ac, chain, track, barIndex, nextBar, playing.boss);
         barIndex++;
       }
     };
@@ -316,18 +448,20 @@
   // Quieter music while paused.
   function duck(on) {
     ducked = on;
-    if (musicBus && ac) musicBus.gain.setTargetAtTime(on ? 0.25 : 0.7, ac.currentTime, 0.05);
+    if (musicBus && ac) musicBus.gain.setTargetAtTime(on ? 0.25 : 0.8, ac.currentTime, 0.05);
   }
 
   // Render a track to an audio buffer (used to make preview files).
   function render(name, seconds, { boss = false, sampleRate = 22050 } = {}) {
     const off = new OfflineAudioContext(1, Math.ceil(seconds * sampleRate), sampleRate);
     const g = off.createGain();
-    g.gain.value = 0.42;
+    g.gain.value = 0.5;
     g.connect(off.destination);
+    const track = TRACKS[name];
+    const chain = makeChain(off, g, track.bpm + (boss ? 6 : 0));
     let t = 0;
     let bar = 0;
-    while (t < seconds) { t += scheduleBar(off, g, TRACKS[name], bar, t, boss); bar++; }
+    while (t < seconds) { t += scheduleBar(off, chain, track, bar, t, boss); bar++; }
     return off.startRendering();
   }
 
