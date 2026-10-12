@@ -6,6 +6,8 @@ Build order for the game described in `game-design.md`. Each step ends with some
 
 **The whole game from the plan is built (Steps 1-11)** and waiting for play-testing. Only Step 12 (story text between places, then packaging for itch.io) is left.
 
+- **Sound and music** (`audio.js`, made live with the Web Audio API, no sound files): 8-bit effects for punches, kicks, the Perfect ding, the miss buzz, the special charge-up, KO, bots collapsing, jumps, menu clicks and win/lose jingles. Music: a chill title tune, then a track per place that gets faster and more intense (Fields 120 bpm → Dojo 136 → Temple 148 → Finale 164), boss fights add a busier beat, Glitch Mode has a stuttering, octave-jumping glitch track, and the ending has its own tune. The Music and Sound settings switch them on and off; music goes quieter while paused.
+
 - **Main Mode** has all four places, each with 5 levels of 3 bots and a boss (best of 3, 90-second rounds): Grassy Fields → Bot Brute, the Dojo → Boxer (a gray bot until beaten), the Cherry Blossom Temple → Samurai (a bot until beaten), and Back to the Fields at sunset (tougher bots) → Cyborg. Bots get a little tougher every level. The map shows one place at a time; moving past the last level goes to the next place.
 - **Ending:** after Cyborg, everyone wakes up and cheers, then Glitch appears and the screen glitches out, and **Glitch Mode** opens: glitched Fields, Dojo and Temple (2 teleporting bots each, 45 seconds), then Glitch as the final boss.
 - **Unlocks:** beating a boss turns him back to normal and he joins your team: Boxer after the Dojo, Samurai after the Temple, Cyborg after the finale, Glitch after Glitch Mode. The Bot Brute becomes a Quick Fight opponent. The "type GLITCH" code is gone (saves that already had Glitch keep him).
@@ -76,7 +78,7 @@ The goal is the Ninja fighting one bot on the Grassy Fields.
 - Pick a fighter, stage, difficulty, and timer (60s / 2 min / ∞).
 - **2-player mode** on one keyboard (P1: WASD + F/G/H, P2: arrows + , . /).
 
-## Step 10: Sound and music (not built yet: only simple beeps so far)
+## Step 10: Sound and music (built)
 
 - 8-bit effects: punch, kick, Perfect ding, miss buzz, special charge-up, KO, bot collapse, menu clicks.
 - Music for each place that gets more intense as you go, plus a glitchy track.

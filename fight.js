@@ -220,13 +220,17 @@
       popups.push({ text, x, y, color, t: 0, life });
     }
 
+    // 8-bit sound effects (audio.js). Names from the fight map to the effects there.
+    const SFX_NAMES = { hit: 'punch', strong: 'kick', low: 'kick', big: 'bigHit' };
     function sound(kind) {
-      const seq = {
-        hit: [220], strong: [150, 110], perfect: [988, 1319], good: [660], miss: [110, 82],
-        low: [180], slam: [120, 80, 60], special: [392, 523, 659, 784, 1046], ko: [440, 330, 220, 165],
-        broken: [523, 392], tired: [200, 160],
-      }[kind] || [440];
-      seq.forEach((n, i) => setTimeout(() => blip(n), i * 55));
+      if (window.SHAudio) window.SHAudio.sfx(SFX_NAMES[kind] || kind);
+      else blip(440);
+    }
+
+    // Music for this place: chill in the Fields, more intense each place, glitchy in Glitch Mode.
+    const TRACK_FOR_STAGE = { grassy: 'grassy', dojo: 'dojo', temple: 'temple', dusk: 'finale' };
+    function startTrack() {
+      window.SHAudio?.music(mode.glitch ? 'glitch' : TRACK_FOR_STAGE[mode.stage || 'grassy'] || 'grassy', { boss: mode.kind === 'boss' });
     }
 
     // ---- Boxes --------------------------------------------------------------
@@ -537,7 +541,7 @@
       launch(o, f, 3.2, 3.6);
       hitstop = 8;
       shake(6, 18);
-      sound('strong');
+      sound('big');
     }
 
     // Boxer's Haymaker: a long charge, then a huge punch.
@@ -610,7 +614,7 @@
 
     // Glitch's Teleport: vanish, reappear behind the enemy, strike.
     function updateTeleport(f, o) {
-      if (f.st === 1) sparks(f.x, GROUND - 14, 12, [C.purple, C.cyan, C.white]);
+      if (f.st === 1) { sparks(f.x, GROUND - 14, 12, [C.purple, C.cyan, C.white]); sound('glitch'); }
       if (f.st === 12) {
         f.x = clamp(o.x - o.facing * 16, WALL_L, WALL_R);
         if (Math.abs(f.x - o.x) < 10) f.x = clamp(o.x + o.facing * 16, WALL_L, WALL_R);
@@ -708,6 +712,7 @@
         f.y = 1;
         f.vx = dir * f.walk * 1.1;
         setAnim(f, 'rise', null, true);
+        if (f.human) sound('jump');
         return;
       }
       if (wantDuck) {
@@ -968,6 +973,7 @@
 
     function result(title, color, lines, items) {
       setPhase('result');
+      sound(winner === player || (twoPlayer && winner) ? 'win' : 'lose');
       resultInfo = { title, color, lines };
       openMenu(items);
     }
@@ -1045,6 +1051,7 @@
       winner = null;
       decisive = true;
       setPhase('enter');
+      startTrack();
     }
 
     // Boss: refill both health bars and start the next round.
@@ -1056,6 +1063,7 @@
       timeLeft = fullTime();
       winner = null;
       setPhase('intro');
+      startTrack();
     }
 
     function update() {
@@ -1102,6 +1110,7 @@
           bot.facing = player.x > bot.x ? 1 : -1;
           sparks(bot.x, GROUND - 14, 10, [C.purple, C.cyan, C.white]);
           glitchBurst = 10;
+          sound('glitch');
           bot.tpT = 200 + Math.floor(rand() * 220);
         }
       }
@@ -1116,11 +1125,13 @@
           winner = player.hp > 0 ? player : bot.hp > 0 ? bot : null;
           decisive = !isBoss || (winner === player && wins.player + 1 >= BOSS_ROUNDS_TO_WIN);
           setPhase('ko');
+          window.SHAudio?.stopMusic(1.2);
           sound('ko');
         } else if (timeLeft <= 0) {
           winner = player.hp > bot.hp ? player : bot.hp > player.hp ? bot : null;
           decisive = !isBoss || (winner === player && wins.player + 1 >= BOSS_ROUNDS_TO_WIN);
           setPhase('time');
+          window.SHAudio?.stopMusic(1.2);
         }
       }
       if (phase === 'ko' || phase === 'time') {
@@ -1133,9 +1144,10 @@
           }
         }
         // A beaten bot slowly turns back into a person, asleep.
-        if (decisive && bot.isBot && phaseT >= 80 && winner === player && bot.state === 'ko') setState(bot, 'convert');
+        if (decisive && bot.isBot && phaseT >= 80 && winner === player && bot.state === 'ko') { setState(bot, 'convert'); sound('collapse'); }
         if (decisive && bot.isBot && phase === 'time' && phaseT === 80 && winner === player && bot.state !== 'ko') {
           setState(bot, 'convert');
+          sound('collapse');
           bot.pose = poseFor('down');
           bot.anim = null;
         }
@@ -1560,9 +1572,10 @@
     function togglePause() {
       if (phase === 'result') return;
       paused = !paused;
+      window.SHAudio?.duck(paused);
       if (paused) {
         openMenu([
-          { label: 'RESUME', action: () => { paused = false; menu = null; } },
+          { label: 'RESUME', action: () => { paused = false; menu = null; window.SHAudio?.duck(false); } },
           { label: 'QUIT', action: () => onExit('menu') },
         ]);
       } else {
@@ -1612,6 +1625,7 @@
       get sleepers() { return sleepers; },
     };
 
+    startTrack();
     return { update, draw, keydown, keyup, pointer, debug };
   }
 

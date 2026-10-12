@@ -236,23 +236,14 @@
     } catch (e) { /* ignore */ }
   }
 
-  // Tiny square-wave blip so the buttons feel clicky.
-  let audio;
+  // Sound and music live in audio.js.
+  const sfxOn = () => window.SHAudio;
   function blip(freq = 660) {
-    if (!settings.sound) return;
-    try {
-      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-      const osc = audio.createOscillator();
-      const gain = audio.createGain();
-      osc.type = 'square';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.06, audio.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.1);
-      osc.connect(gain).connect(audio.destination);
-      osc.start();
-      osc.stop(audio.currentTime + 0.1);
-    } catch (e) { /* no audio */ }
+    sfxOn()?.blip(freq);
   }
+  window.SHAudio?.setSound(settings.sound);
+  window.SHAudio?.setMusic(settings.music);
+  window.SHAudio?.music('title');
 
   // ---- Screens & buttons ----------------------------------------------
   // Buttons snap to the 16px grid: 6 tiles wide, 1 tile tall.
@@ -427,6 +418,7 @@
 
   function go(next) {
     toast = null;
+    if (next !== 'fight' && next !== 'ending') window.SHAudio?.music('title');
     if (next !== 'fight') { fight = null; window.stickFight = null; }
     screen = next;
     if (next === 'map') buildMap();
@@ -642,6 +634,7 @@
   ];
 
   function startEnding() {
+    window.SHAudio?.music('ending');
     fight = null;
     window.stickFight = null;
     screen = 'ending';
@@ -668,6 +661,8 @@
     drawPose(ctx, 'ninja', poseFor(t > 40 ? 'victory' : 'idle1'), W / 2, ground);
     drawTextCentered('CYBORG IS BEATEN!', 8, C.yellow, 2, C.red);
     if (t > 60) drawTextCentered('EVERYONE WAKES UP!', 28, C.white, 1, C.night);
+    if (t === 261) { window.SHAudio?.music('glitch'); window.SHAudio?.sfx('glitch'); }
+    if (t === 381) window.SHAudio?.sfx('unlock');
     if (t > 260) {
       // Glitch appears for a moment...
       const flick = t < 300 ? Math.floor(t / 3) % 2 : 1;
@@ -694,6 +689,9 @@
     } else if (btn.key) {
       settings[btn.key] = !settings[btn.key];
       saveSettings();
+      // Sound and music switch on and off right away.
+      if (btn.key === 'sound') window.SHAudio?.setSound(settings.sound);
+      if (btn.key === 'music') window.SHAudio?.setMusic(settings.music);
       blip(settings[btn.key] ? 880 : 440);
     } else {
       blip(btn.label === 'BACK' ? 440 : 660);
@@ -1051,6 +1049,10 @@
   window.addEventListener('keyup', (e) => {
     if (fight) fight.keyup(e);
   });
+
+  // Browsers only allow sound after the first click or key press.
+  window.addEventListener('pointerdown', () => window.SHAudio?.unlock());
+  window.addEventListener('keydown', () => window.SHAudio?.unlock());
 
   window.addEventListener('keydown', (e) => {
     if (GAME_KEYS.includes(e.key)) e.preventDefault();
