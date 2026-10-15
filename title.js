@@ -285,6 +285,7 @@
     map: [],
     fight: [],
     ending: [],
+    story: [],
     // Quick Fight setup (from docs/game-design.md): mode, stage, difficulty and timer.
     quick: [
       { opt: 'mode', label: 'MODE', values: ['VS COMPUTER', '2 PLAYERS'], x: 40, w: 176, y: 26 },
@@ -479,6 +480,7 @@
       },
     }));
     screens.map.push({ label: 'BACK', small: true, x: 4, y: H - 15, w: 40, h: 11, action: () => go('title') });
+    screens.map.push({ label: 'STORY', small: true, x: 48, y: H - 15, w: 40, h: 11, action: () => startStory() });
   }
 
   // The first level you haven't beaten yet.
@@ -513,7 +515,9 @@
 
   function pickDifficulty(d) {
     mainDifficulty = d;
-    go('map');
+    // The opening story plays the first time Main Mode starts.
+    if (!progress.storySeen && progress.cleared === 0) startStory();
+    else go('map');
   }
 
   // ---- The fight ---------------------------------------------------------
@@ -628,6 +632,197 @@
     if (progress.glitch >= 4) drawTextCentered('EVERYTHING CLEARED! YOU BEAT THE GAME!', 116, C.green, 1, C.night);
     else if (glitchOpen() && !isGlitch) drawTextCentered('GLITCH MODE IS OPEN: GO RIGHT >', 116, '#ff4fd8', 1, C.night);
     drawText('ENTER: START  ESC: BACK', W - textWidth('ENTER: START  ESC: BACK') - 4, H - 13, C.grey);
+  }
+
+  // ---- Opening story (docs/game-design.md, "Story") -------------------------
+  // Each scene has a background, a line of text (with an optional speaker) and a
+  // little animation. Enter shows the whole line, then goes on. Esc skips.
+  const STORY = [
+    { bg: 'space', text: 'FAR AWAY, A SUPERVILLAIN CALLED CYBORG IS TERRORIZING THE UNIVERSE.' },
+    { bg: 'dusk', text: 'HE TURNS PEOPLE INTO BOTS: GRAY AND LIFELESS, DOING RANDOM BOT STUFF.' },
+    { bg: 'grassy', text: 'IN THE GRASSY FIELDS, A NINJA LIVES AT A SMALL TEMPLE.' },
+    { bg: 'grassy', speaker: 'SAMURAI', text: 'NINJA! I CAME FROM THE CHERRY BLOSSOM TEMPLE. CYBORG IS COMING. HE IS TURNING EVERYONE INTO BOTS!' },
+    { bg: 'grassy', text: 'BUT CYBORG HAD FOLLOWED HIM...' },
+    { bg: 'grassy', text: 'ZAP! THE SAMURAI IS A BOT NOW TOO.' },
+    { bg: 'grassy', speaker: 'NINJA', text: 'I WILL FIX THIS. I WILL BEAT EVERY BOT AND TURN THEM ALL BACK!' },
+    { bg: 'grassy', text: 'BEAT A BOT AND IT TURNS BACK INTO A PERSON. BEAT A BOSS AND HE JOINS YOUR TEAM. GOOD LUCK!' },
+  ];
+  let storyIndex = 0;
+  let storyT = 0;
+  const storyBgs = {};
+
+  function startStory() {
+    fight = null;
+    window.stickFight = null;
+    toast = null;
+    screen = 'story';
+    selected = 0;
+    storyIndex = 0;
+    storyT = 0;
+    window.SHAudio?.music('title');
+  }
+
+  function endStory() {
+    progress.storySeen = true;
+    saveProgress();
+    go('map');
+  }
+
+  // Wrap text into lines that fit the text box.
+  function wrap(text, max) {
+    const lines = [];
+    let line = '';
+    for (const word of text.split(' ')) {
+      if ((line + ' ' + word).trim().length > max) { lines.push(line); line = word; } else line = (line + ' ' + word).trim();
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  const storyLine = () => STORY[storyIndex].text;
+  const storyTyped = () => Math.min(storyLine().length, Math.floor(storyT * 0.9));
+
+  function advanceStory() {
+    if (storyTyped() < storyLine().length) { storyT = 9999; return; }
+    blip(660);
+    storyIndex++;
+    storyT = 0;
+    if (storyIndex >= STORY.length) endStory();
+  }
+
+  function drawSpace() {
+    ctx.fillStyle = C.night;
+    ctx.fillRect(0, 0, W, H);
+    for (let k = 0; k < 60; k++) {
+      if ((frame + k * 7) % 80 < 70) {
+        ctx.fillStyle = k % 5 ? C.white : C.cyan;
+        ctx.fillRect((k * 53 + 7) % W, (k * 31 + 3) % 110, 1, 1);
+      }
+    }
+    // A planet and a ringed moon.
+    ctx.fillStyle = C.purple;
+    for (let y = -16; y <= 16; y++) for (let x = -16; x <= 16; x++) if (x * x + y * y <= 256) ctx.fillRect(210 + x, 34 + y, 1, 1);
+    ctx.fillStyle = C.red; ctx.fillRect(196, 30, 18, 2); ctx.fillRect(204, 40, 14, 2);
+    ctx.fillStyle = C.blue;
+    for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (x * x + y * y <= 36) ctx.fillRect(40 + x, 24 + y, 1, 1);
+    ctx.fillStyle = C.grey; ctx.fillRect(28, 24, 25, 1);
+  }
+
+  // A crackling zap from one point to another.
+  function zap(x0, y0, x1, y1) {
+    ctx.fillStyle = frame % 4 < 2 ? C.cyan : C.white;
+    const n = 10;
+    for (let k = 0; k <= n; k++) {
+      const x = x0 + ((x1 - x0) * k) / n;
+      const y = y0 + ((y1 - y0) * k) / n + (k % n ? Math.round((Math.random() - 0.5) * 6) : 0);
+      ctx.fillRect(Math.round(x), Math.round(y), 2, 2);
+    }
+  }
+
+  function drawStoryScene() {
+    const { poseFor, lerpPose, drawPose } = window.Rig;
+    const scene = STORY[storyIndex];
+    const t = storyT;
+    const G = 110;
+    const P = (k, extra) => (extra ? { ...poseFor(k), ...extra } : poseFor(k));
+    const breathe = Math.floor(frame / 28) % 2 ? 'idle1' : 'idle2';
+    const walk = ['walkA', 'walkP1', 'walkB', 'walkP2'][Math.floor(frame / 6) % 4];
+    if (scene.bg === 'space') drawSpace();
+    else ctx.drawImage(storyBgs[scene.bg] || (storyBgs[scene.bg] = window.StickFight.stageImage(scene.bg, C)), 0, 0);
+
+    switch (storyIndex) {
+      case 0: {
+        // Cyborg floats in space, eyes glowing.
+        const bob = Math.round(Math.sin(frame / 20) * 2);
+        drawPose(ctx, 'cyborg', P('victory', { face: 'angry' }), W / 2, 92 + bob, { scale: 2 });
+        break;
+      }
+      case 1: {
+        // People walking by; Cyborg zaps one and they turn gray.
+        drawPose(ctx, 'cyborg', P('jab'), 210, G, { flip: true });
+        const xs = [60, 110, 150];
+        xs.forEach((x, k) => {
+          const id = ['person-r', 'person-y', 'person-g'][k];
+          if (k === 1 && t > 40) {
+            const a = Math.min(1, (t - 40) / 40);
+            if (t < 80) zap(200, 98, x + 4, 96);
+            drawPose(ctx, id, P('hit'), x, G, { alpha: 1 - a });
+            drawPose(ctx, 'bot', P(t > 100 ? breathe : 'hit'), x, G, { alpha: a });
+          } else {
+            drawPose(ctx, id, P(walk), x + ((t / 3) % 6), G);
+          }
+        });
+        break;
+      }
+      case 2:
+        // The Ninja at his small temple.
+        drawPose(ctx, 'ninja', P(breathe), 168, G, { flip: true });
+        break;
+      case 3: {
+        // The Samurai runs in to warn him.
+        const x = Math.min(120, 10 + t * 2);
+        drawPose(ctx, 'samurai', P(x < 120 ? walk : breathe), x, G);
+        drawPose(ctx, 'ninja', P(breathe), 168, G, { flip: true });
+        break;
+      }
+      case 4: {
+        // Cyborg appears behind him with a burst of static.
+        const show = t > 20 || Math.floor(t / 3) % 2;
+        if (show) drawPose(ctx, 'cyborg', P('idle1'), 40, G);
+        if (t < 24) window.StickFight.glitchFx(ctx, 0.4);
+        drawPose(ctx, 'samurai', P('idle1'), 120, G, { flip: true });
+        drawPose(ctx, 'ninja', P(breathe), 168, G, { flip: true });
+        break;
+      }
+      case 5: {
+        // ZAP: the Samurai turns into a bot. Cyborg leaves.
+        const a = Math.min(1, t / 50);
+        if (t < 120) drawPose(ctx, 'cyborg', P('jab'), 40, G, { alpha: t < 80 ? 1 : 1 - (t - 80) / 40 });
+        if (t < 40) zap(58, 99, 116, 96);
+        drawPose(ctx, 'samurai', P('hit'), 120, G, { flip: true, alpha: 1 - a });
+        drawPose(ctx, 'samurai-bot', P(t > 60 ? 'idle1' : 'hit'), 120, G, { flip: true, alpha: a });
+        drawPose(ctx, 'ninja', P('hit'), 168, G, { flip: true });
+        break;
+      }
+      case 6:
+        // The Ninja makes up his mind.
+        drawPose(ctx, 'samurai-bot', P('idle1'), 120, G, { flip: true });
+        drawPose(ctx, 'ninja', P(Math.floor(frame / 30) % 2 ? 'victory' : 'jab'), 168, G, { flip: true });
+        break;
+      default:
+        // He sets out.
+        drawPose(ctx, 'ninja', P(walk), 128, G);
+        break;
+    }
+
+    // Text box with the line typing out.
+    ctx.fillStyle = C.night;
+    ctx.fillRect(0, 112, W, H - 112);
+    ctx.fillStyle = C.slate;
+    ctx.fillRect(0, 112, W, 1);
+    if (scene.speaker) {
+      const w = textWidth(scene.speaker) + 8;
+      ctx.fillStyle = scene.speaker === 'NINJA' ? C.blue : C.orange;
+      ctx.fillRect(4, 103, w, 10);
+      drawText(scene.speaker, 8, 105, C.white);
+    }
+    const shown = storyLine().slice(0, storyTyped());
+    const lines = wrap(storyLine(), 41);
+    let left = shown.length;
+    lines.forEach((l, k) => {
+      const part = l.slice(0, Math.max(0, left));
+      left -= l.length + 1;
+      drawText(part, 6, 117 + k * 9, C.white);
+    });
+    if (storyTyped() >= storyLine().length && Math.floor(frame / 20) % 2) drawText('>', W - 10, H - 9, C.yellow);
+    const corner = `${storyIndex + 1}/${STORY.length}  ESC: SKIP`;
+    ctx.fillStyle = 'rgba(26, 28, 44, 0.75)';
+    ctx.fillRect(W - 8 - textWidth(corner), 0, textWidth(corner) + 8, 11);
+    drawText(corner, W - 4 - textWidth(corner), 2, C.grey);
+    if (storyTyped() < storyLine().length && storyT % 3 === 0) blip(880 + (storyT % 5) * 20);
+    if (storyIndex === 5 && t === 1) window.SHAudio?.sfx('special');
+    if (storyIndex === 1 && t === 41) window.SHAudio?.sfx('collapse');
+    storyT++;
   }
 
   // ---- Ending: everyone wakes up, then Glitch breaks the screen -------------
@@ -972,6 +1167,8 @@
       drawSelect();
     } else if (screen === 'versus') {
       drawVersus();
+    } else if (screen === 'story') {
+      drawStoryScene();
     } else if (screen === 'ending') {
       drawEnding();
     } else if (screen === 'map') {
@@ -1045,6 +1242,7 @@
       fight.pointer('up', x, y);
       return;
     }
+    if (screen === 'story') { advanceStory(); return; }
     const i = hitTest(e);
     if (i >= 0 && i === pressed) activate(i);
     pressed = -1;
@@ -1063,6 +1261,11 @@
     if (GAME_KEYS.includes(e.key)) e.preventDefault();
     if (fight) {
       if (!e.repeat) fight.keydown(e);
+      return;
+    }
+    if (screen === 'story') {
+      if (e.key === 'Enter' || e.key === ' ') advanceStory();
+      else if (e.key === 'Escape') endStory();
       return;
     }
     if (screen === 'ending') {

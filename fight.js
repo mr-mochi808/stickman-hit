@@ -1156,6 +1156,7 @@
     }
 
     // ---- Drawing ----------------------------------------------------------------
+    const buildStage = makeStageBuilder(C);
     const stage = document.createElement('canvas');
     stage.width = W;
     stage.height = H;
@@ -1174,130 +1175,6 @@
       }
     }
     stage.addEventListener?.('contextrestored', () => { buildStage(stageCtx, stageId); window.Rig.clearCache(); });
-
-    function buildStage(g, id) {
-      if (id === 'dojo') buildDojo(g);
-      else if (id === 'temple') buildTemple(g);
-      else buildFields(g, id === 'dusk');
-    }
-
-    // The Grassy Fields, with the Ninja's small temple on the hill.
-    // The finale's "dusk" version has a red evening sky and darker grass.
-    function buildFields(g, dusk) {
-      const bands = dusk ? ['#1a1c2c', '#29366f', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75']
-        : ['#41a6f6', '#41a6f6', '#52b6f6', '#63c6f6', '#73d6f6', '#73eff7'];
-      bands.forEach((col, k) => { g.fillStyle = col; g.fillRect(0, k * 14, W, 14); });
-      if (dusk) {
-        // A big red moon over the fields.
-        g.fillStyle = '#ef7d57';
-        for (let y = -9; y <= 9; y++) for (let x = -9; x <= 9; x++) if (x * x + y * y <= 81) g.fillRect(60 + x, 30 + y, 1, 1);
-        g.fillStyle = '#b13e53'; g.fillRect(55, 27, 3, 2); g.fillRect(63, 33, 2, 2);
-      }
-      // Far hills.
-      g.fillStyle = dusk ? '#29366f' : C.darkGreen;
-      for (let x = 0; x < W; x++) {
-        const h = 22 + Math.round(Math.sin(x / 23) * 6 + Math.sin(x / 9) * 2);
-        g.fillRect(x, 84 - h + 22, 1, h + 10);
-      }
-      // The temple on the right hill.
-      const tx = 188;
-      const ty = 66;
-      g.fillStyle = C.night; g.fillRect(tx - 1, ty + 6, 30, 2);
-      g.fillStyle = C.white; g.fillRect(tx + 2, ty + 8, 24, 14);
-      g.fillStyle = C.red;
-      [tx + 2, tx + 10, tx + 17, tx + 24].forEach((px) => g.fillRect(px, ty + 8, 2, 14));
-      g.fillStyle = C.night; g.fillRect(tx + 12, ty + 14, 4, 8);
-      g.fillStyle = C.dark;
-      g.fillRect(tx - 3, ty + 4, 34, 3);
-      g.fillRect(tx + 1, ty + 1, 26, 3);
-      g.fillRect(tx + 6, ty - 2, 16, 3);
-      g.fillStyle = C.night;
-      g.fillRect(tx - 4, ty + 3, 2, 2); g.fillRect(tx + 30, ty + 3, 2, 2);
-      g.fillRect(tx + 13, ty - 4, 2, 2);
-      g.fillStyle = C.dark; g.fillRect(tx - 2, ty + 22, 32, 2);
-      // Near hills.
-      g.fillStyle = dusk ? C.darkGreen : C.green;
-      for (let x = 0; x < W; x++) {
-        const h = 14 + Math.round(Math.sin(x / 31 + 1) * 5);
-        g.fillRect(x, GROUND - h, 1, h);
-      }
-      // Ground: grass on top of dirt.
-      g.fillStyle = dusk ? C.darkGreen : C.green; g.fillRect(0, GROUND, W, 4);
-      g.fillStyle = dusk ? C.green : '#a7f070';
-      for (let x = 0; x < W; x += 7) g.fillRect(x + (x % 3), GROUND, 2, 1);
-      g.fillStyle = dusk ? C.dark : C.darkGreen; g.fillRect(0, GROUND + 4, W, 6);
-      g.fillStyle = C.dark;
-      for (let x = 3; x < W; x += 11) g.fillRect(x, GROUND + 6 + (x % 3), 2, 2);
-      // Flowers in the grass.
-      [[30, C.yellow], [70, C.white], [140, C.yellow], [214, C.white], [238, C.red]].forEach(([x, col]) => {
-        g.fillStyle = col; g.fillRect(x, GROUND - 2, 2, 2);
-      });
-    }
-
-    // The Dojo: wooden walls, paper screens, a red banner and a plank floor.
-    function buildDojo(g) {
-      g.fillStyle = '#5a3a26'; g.fillRect(0, 0, W, GROUND);
-      // Paper screens between wooden posts.
-      for (let x = 6; x < W; x += 50) {
-        g.fillStyle = '#f4e4c1'; g.fillRect(x, 22, 40, 66);
-        g.fillStyle = '#c9b48e';
-        for (let k = 1; k < 4; k++) g.fillRect(x + k * 10, 22, 1, 66);
-        for (let k = 1; k < 6; k++) g.fillRect(x, 22 + k * 11, 40, 1);
-        g.fillStyle = '#3b2416'; g.fillRect(x - 3, 16, 3, GROUND - 16); g.fillRect(x + 40, 16, 3, GROUND - 16);
-      }
-      // Ceiling beam and a red banner with a white circle.
-      g.fillStyle = '#3b2416'; g.fillRect(0, 12, W, 6);
-      g.fillStyle = C.red; g.fillRect(114, 18, 28, 40);
-      g.fillStyle = '#5d275d'; g.fillRect(114, 56, 28, 2);
-      g.fillStyle = C.white;
-      for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (x * x + y * y <= 36 && x * x + y * y >= 12) g.fillRect(128 + x, 36 + y, 1, 1);
-      // Weapon rack and a low wall rail.
-      g.fillStyle = '#3b2416'; g.fillRect(0, 92, W, 3);
-      g.fillStyle = '#a0632c'; g.fillRect(0, 95, W, GROUND - 95);
-      // Plank floor.
-      g.fillStyle = '#a0632c'; g.fillRect(0, GROUND, W, 10);
-      g.fillStyle = '#7a4a2a';
-      g.fillRect(0, GROUND, W, 1); g.fillRect(0, GROUND + 5, W, 1);
-      for (let x = 0; x < W; x += 24) { g.fillRect(x, GROUND + 1, 1, 4); g.fillRect(x + 12, GROUND + 6, 1, 4); }
-    }
-
-    // The Cherry Blossom Temple: a pink sunset, blossom trees and a red gate.
-    function buildTemple(g) {
-      const bands = ['#5d275d', '#b13e53', '#ef7d57', '#f4a0a0', '#ffcd75', '#ffe6b0'];
-      bands.forEach((col, k) => { g.fillStyle = col; g.fillRect(0, k * 14, W, 14); });
-      // Purple mountains.
-      g.fillStyle = '#5d275d';
-      for (let x = 0; x < W; x++) {
-        const h = 26 + Math.round(Math.abs(Math.sin(x / 40)) * 22);
-        g.fillRect(x, 92 - h, 1, h + 20);
-      }
-      // The temple roof up on the hill.
-      const tx = 150;
-      g.fillStyle = C.night; g.fillRect(tx - 6, 54, 56, 4); g.fillRect(tx, 48, 44, 4); g.fillRect(tx + 10, 43, 24, 4);
-      g.fillStyle = C.red; [tx + 2, tx + 14, tx + 28, tx + 40].forEach((px) => g.fillRect(px, 58, 3, 30));
-      g.fillStyle = '#f4e4c1'; g.fillRect(tx + 5, 60, 9, 26); g.fillRect(tx + 17, 60, 11, 26); g.fillRect(tx + 31, 60, 9, 26);
-      // Red torii gate on the left.
-      g.fillStyle = C.red; g.fillRect(14, 50, 52, 4); g.fillRect(20, 58, 40, 3); g.fillRect(24, 54, 4, GROUND - 54); g.fillRect(52, 54, 4, GROUND - 54);
-      g.fillStyle = C.night; g.fillRect(12, 48, 56, 2);
-      // Blossom trees.
-      [[96, 70], [222, 66], [6, 80]].forEach(([x, y]) => {
-        g.fillStyle = '#5a3a26'; g.fillRect(x + 8, y, 4, GROUND - y);
-        for (const [dx, dy, r] of [[0, 0, 9], [12, -4, 10], [22, 2, 8], [8, -12, 8]]) {
-          for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) {
-            if (xx * xx + yy * yy > r * r) continue;
-            // Speckled blossoms: a little hash picks white, light pink or pink.
-            const h = ((x + dx + xx) * 73 + (y + dy + yy) * 151) % 11;
-            g.fillStyle = h === 0 ? '#ffffff' : h < 4 ? '#f4a0c8' : yy > r / 2 ? '#e070a8' : '#ff8fc0';
-            g.fillRect(x + dx + xx, y - 6 + dy + yy, 1, 1);
-          }
-        }
-      });
-      // Stone path.
-      g.fillStyle = '#94b0c2'; g.fillRect(0, GROUND, W, 10);
-      g.fillStyle = '#566c86';
-      g.fillRect(0, GROUND, W, 1);
-      for (let x = 0; x < W; x += 18) { g.fillRect(x, GROUND + 1, 1, 9); g.fillRect(x + 9, GROUND + 5, 1, 1); }
-    }
 
     const clouds = [[20, 14, 26], [110, 24, 18], [180, 10, 30]];
     const petals = Array.from({ length: 22 }, (_, k) => ({ x: (k * 47) % W, y: (k * 29) % GROUND, s: 0.2 + (k % 5) * 0.08 }));
@@ -1645,6 +1522,144 @@
     return { update, draw, keydown, keyup, pointer, debug };
   }
 
+  // Stage backgrounds (also used by the story scenes on the title side).
+  function makeStageBuilder(C) {
+    function buildStage(g, id) {
+      if (id === 'dojo') buildDojo(g);
+      else if (id === 'temple') buildTemple(g);
+      else buildFields(g, id === 'dusk');
+    }
+
+    // The Grassy Fields, with the Ninja's small temple on the hill.
+    // The finale's "dusk" version has a red evening sky and darker grass.
+    function buildFields(g, dusk) {
+      const bands = dusk ? ['#1a1c2c', '#29366f', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75']
+        : ['#41a6f6', '#41a6f6', '#52b6f6', '#63c6f6', '#73d6f6', '#73eff7'];
+      bands.forEach((col, k) => { g.fillStyle = col; g.fillRect(0, k * 14, W, 14); });
+      if (dusk) {
+        // A big red moon over the fields.
+        g.fillStyle = '#ef7d57';
+        for (let y = -9; y <= 9; y++) for (let x = -9; x <= 9; x++) if (x * x + y * y <= 81) g.fillRect(60 + x, 30 + y, 1, 1);
+        g.fillStyle = '#b13e53'; g.fillRect(55, 27, 3, 2); g.fillRect(63, 33, 2, 2);
+      }
+      // Far hills.
+      g.fillStyle = dusk ? '#29366f' : C.darkGreen;
+      for (let x = 0; x < W; x++) {
+        const h = 22 + Math.round(Math.sin(x / 23) * 6 + Math.sin(x / 9) * 2);
+        g.fillRect(x, 84 - h + 22, 1, h + 10);
+      }
+      // The temple on the right hill.
+      const tx = 188;
+      const ty = 66;
+      g.fillStyle = C.night; g.fillRect(tx - 1, ty + 6, 30, 2);
+      g.fillStyle = C.white; g.fillRect(tx + 2, ty + 8, 24, 14);
+      g.fillStyle = C.red;
+      [tx + 2, tx + 10, tx + 17, tx + 24].forEach((px) => g.fillRect(px, ty + 8, 2, 14));
+      g.fillStyle = C.night; g.fillRect(tx + 12, ty + 14, 4, 8);
+      g.fillStyle = C.dark;
+      g.fillRect(tx - 3, ty + 4, 34, 3);
+      g.fillRect(tx + 1, ty + 1, 26, 3);
+      g.fillRect(tx + 6, ty - 2, 16, 3);
+      g.fillStyle = C.night;
+      g.fillRect(tx - 4, ty + 3, 2, 2); g.fillRect(tx + 30, ty + 3, 2, 2);
+      g.fillRect(tx + 13, ty - 4, 2, 2);
+      g.fillStyle = C.dark; g.fillRect(tx - 2, ty + 22, 32, 2);
+      // Near hills.
+      g.fillStyle = dusk ? C.darkGreen : C.green;
+      for (let x = 0; x < W; x++) {
+        const h = 14 + Math.round(Math.sin(x / 31 + 1) * 5);
+        g.fillRect(x, GROUND - h, 1, h);
+      }
+      // Ground: grass on top of dirt.
+      g.fillStyle = dusk ? C.darkGreen : C.green; g.fillRect(0, GROUND, W, 4);
+      g.fillStyle = dusk ? C.green : '#a7f070';
+      for (let x = 0; x < W; x += 7) g.fillRect(x + (x % 3), GROUND, 2, 1);
+      g.fillStyle = dusk ? C.dark : C.darkGreen; g.fillRect(0, GROUND + 4, W, 6);
+      g.fillStyle = C.dark;
+      for (let x = 3; x < W; x += 11) g.fillRect(x, GROUND + 6 + (x % 3), 2, 2);
+      // Flowers in the grass.
+      [[30, C.yellow], [70, C.white], [140, C.yellow], [214, C.white], [238, C.red]].forEach(([x, col]) => {
+        g.fillStyle = col; g.fillRect(x, GROUND - 2, 2, 2);
+      });
+    }
+
+    // The Dojo: wooden walls, paper screens, a red banner and a plank floor.
+    function buildDojo(g) {
+      g.fillStyle = '#5a3a26'; g.fillRect(0, 0, W, GROUND);
+      // Paper screens between wooden posts.
+      for (let x = 6; x < W; x += 50) {
+        g.fillStyle = '#f4e4c1'; g.fillRect(x, 22, 40, 66);
+        g.fillStyle = '#c9b48e';
+        for (let k = 1; k < 4; k++) g.fillRect(x + k * 10, 22, 1, 66);
+        for (let k = 1; k < 6; k++) g.fillRect(x, 22 + k * 11, 40, 1);
+        g.fillStyle = '#3b2416'; g.fillRect(x - 3, 16, 3, GROUND - 16); g.fillRect(x + 40, 16, 3, GROUND - 16);
+      }
+      // Ceiling beam and a red banner with a white circle.
+      g.fillStyle = '#3b2416'; g.fillRect(0, 12, W, 6);
+      g.fillStyle = C.red; g.fillRect(114, 18, 28, 40);
+      g.fillStyle = '#5d275d'; g.fillRect(114, 56, 28, 2);
+      g.fillStyle = C.white;
+      for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (x * x + y * y <= 36 && x * x + y * y >= 12) g.fillRect(128 + x, 36 + y, 1, 1);
+      // Weapon rack and a low wall rail.
+      g.fillStyle = '#3b2416'; g.fillRect(0, 92, W, 3);
+      g.fillStyle = '#a0632c'; g.fillRect(0, 95, W, GROUND - 95);
+      // Plank floor.
+      g.fillStyle = '#a0632c'; g.fillRect(0, GROUND, W, 10);
+      g.fillStyle = '#7a4a2a';
+      g.fillRect(0, GROUND, W, 1); g.fillRect(0, GROUND + 5, W, 1);
+      for (let x = 0; x < W; x += 24) { g.fillRect(x, GROUND + 1, 1, 4); g.fillRect(x + 12, GROUND + 6, 1, 4); }
+    }
+
+    // The Cherry Blossom Temple: a pink sunset, blossom trees and a red gate.
+    function buildTemple(g) {
+      const bands = ['#5d275d', '#b13e53', '#ef7d57', '#f4a0a0', '#ffcd75', '#ffe6b0'];
+      bands.forEach((col, k) => { g.fillStyle = col; g.fillRect(0, k * 14, W, 14); });
+      // Purple mountains.
+      g.fillStyle = '#5d275d';
+      for (let x = 0; x < W; x++) {
+        const h = 26 + Math.round(Math.abs(Math.sin(x / 40)) * 22);
+        g.fillRect(x, 92 - h, 1, h + 20);
+      }
+      // The temple roof up on the hill.
+      const tx = 150;
+      g.fillStyle = C.night; g.fillRect(tx - 6, 54, 56, 4); g.fillRect(tx, 48, 44, 4); g.fillRect(tx + 10, 43, 24, 4);
+      g.fillStyle = C.red; [tx + 2, tx + 14, tx + 28, tx + 40].forEach((px) => g.fillRect(px, 58, 3, 30));
+      g.fillStyle = '#f4e4c1'; g.fillRect(tx + 5, 60, 9, 26); g.fillRect(tx + 17, 60, 11, 26); g.fillRect(tx + 31, 60, 9, 26);
+      // Red torii gate on the left.
+      g.fillStyle = C.red; g.fillRect(14, 50, 52, 4); g.fillRect(20, 58, 40, 3); g.fillRect(24, 54, 4, GROUND - 54); g.fillRect(52, 54, 4, GROUND - 54);
+      g.fillStyle = C.night; g.fillRect(12, 48, 56, 2);
+      // Blossom trees.
+      [[96, 70], [222, 66], [6, 80]].forEach(([x, y]) => {
+        g.fillStyle = '#5a3a26'; g.fillRect(x + 8, y, 4, GROUND - y);
+        for (const [dx, dy, r] of [[0, 0, 9], [12, -4, 10], [22, 2, 8], [8, -12, 8]]) {
+          for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) {
+            if (xx * xx + yy * yy > r * r) continue;
+            // Speckled blossoms: a little hash picks white, light pink or pink.
+            const h = ((x + dx + xx) * 73 + (y + dy + yy) * 151) % 11;
+            g.fillStyle = h === 0 ? '#ffffff' : h < 4 ? '#f4a0c8' : yy > r / 2 ? '#e070a8' : '#ff8fc0';
+            g.fillRect(x + dx + xx, y - 6 + dy + yy, 1, 1);
+          }
+        }
+      });
+      // Stone path.
+      g.fillStyle = '#94b0c2'; g.fillRect(0, GROUND, W, 10);
+      g.fillStyle = '#566c86';
+      g.fillRect(0, GROUND, W, 1);
+      for (let x = 0; x < W; x += 18) { g.fillRect(x, GROUND + 1, 1, 9); g.fillRect(x + 9, GROUND + 5, 1, 1); }
+    }
+
+    return buildStage;
+  }
+
+  // A finished stage background as a canvas, for screens outside a fight.
+  function stageImage(id, C) {
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    makeStageBuilder(C)(c.getContext('2d', { willReadFrequently: true }), id);
+    return c;
+  }
+
   // Screen-tearing glitch effect drawn over whatever is on the canvas.
   function glitchFx(ctx, amount) {
     const cv = ctx.canvas;
@@ -1666,5 +1681,5 @@
     }
   }
 
-  window.StickFight = { create, AI_LEVELS, glitchFx };
+  window.StickFight = { create, AI_LEVELS, glitchFx, stageImage };
 })();

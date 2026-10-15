@@ -4,7 +4,7 @@ Build order for the game described in `game-design.md`. Each step ends with some
 
 ## Progress
 
-**The whole game from the plan is built (Steps 1-11)** and waiting for play-testing. Only Step 12 (story text between places, then packaging for itch.io) is left.
+**The whole game from the plan is built (Steps 1-11)** and waiting for play-testing. Step 12 is partly done: the opening story is in; story text between the other places and packaging for itch.io are left.
 
 - **Sound and music** (`audio.js`, made live with the Web Audio API, no sound files): 8-bit effects for punches, kicks, the Perfect ding, the miss buzz, the special charge-up, KO, bots collapsing, jumps, menu clicks and win/lose jingles. Music: a chill title tune, then a track per place that gets faster and more intense (Fields 120 bpm → Dojo 136 → Temple 148 → Finale 164), boss fights add a busier beat, Glitch Mode has a stuttering, octave-jumping glitch track, and the ending has its own tune. The Music and Sound settings switch them on and off; music goes quieter while paused.
 
@@ -90,7 +90,9 @@ The goal is the Ninja fighting one bot on the Grassy Fields.
 - **Glitch** as the final boss (commander of the bots, **Teleport** special), drawn at 28×28.
 - Beating him unlocks Glitch. This replaces the "type GLITCH" cheat.
 
-## Step 12: Release
+## Step 12: Release (opening story built)
+
+- **Opening story (built):** an 8-scene cutscene the first time Main Mode starts (and from the STORY button on the map). Cyborg terrorizes the universe and turns people into bots; the Ninja lives at his small temple in the Grassy Fields; the Samurai comes from the Cherry Blossom Temple to warn him and is zapped into a bot; the Ninja sets out. The text is in `STORY` near the top of the story section in `title.js`, so it is easy to change.
 
 - Story text between places (design this together first).
 - Package for **itch.io**.
