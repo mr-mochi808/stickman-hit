@@ -742,7 +742,7 @@
   }
 
   // ---- Roster --------------------------------------------------------------
-  // Names are placeholders until the creator picks the final names.
+  // Final fighter names, chosen by the creator.
   const CHARACTERS = [
     {
       id: 'ninja',

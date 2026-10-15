@@ -54,7 +54,7 @@ Matchup circle: BOXER beats SAMURAI, SAMURAI beats ROBOT, ROBOT beats NINJA, NIN
 - Started with 16×16 sprites, then asked for more detail; chose **24×24**.
 - Removed the earlier BONK (hard hat + mallet) and TWIG (cap + staff) and replaced them with **SAMURAI** and **ROBOT**.
 - Added **GLITCH** as a locked character whose special move is teleporting.
-- The user wants to **choose all the fighter names themselves**. BOXER, NINJA, SAMURAI and ROBOT are placeholders; they have not sent the names yet. Names live only in `characters.js` (`name` field). The user may also want to rename GLITCH.
+- **Fighter names are final:** NINJA, BOXER, SAMURAI, CYBORG (renamed from ROBOT) and GLITCH. The user first wanted to pick new names, then decided to keep these (2026-10-15).
 - The user asked whether they can publish the game without crediting Claude. Answer given: yes, they own the output; commits carry a Co-Authored-By trailer they can squash away if they want; some stores ask about AI use.
 
 ## Open questions for the mechanics talk
